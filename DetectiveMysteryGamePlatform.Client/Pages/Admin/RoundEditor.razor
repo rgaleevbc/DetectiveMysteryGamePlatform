@@ -1,0 +1,488 @@
+@page "/admin/quests/{QuestId:guid}/rounds"
+@using DetectiveMysteryGamePlatform.Client.Services
+@using DetectiveMysteryGamePlatform.Shared.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiService ApiService
+@inject NavigationManager NavigationManager
+
+<div class="round-editor-container">
+    <div class="editor-header">
+        <h1>Rounds for: @questTitle</h1>
+        <div class="header-actions">
+            <button class="btn btn-secondary" @onclick="NavigateBack">
+                Back to Quest
+            </button>
+            <button class="btn btn-primary" @onclick="() => ShowRoundModal(true)">
+                Add Round
+            </button>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="loading-container">
+            <div class="spinner"></div>
+            <p>Loading rounds...</p>
+        </div>
+    }
+    else if (rounds == null || !rounds.Any())
+    {
+        <div class="empty-state">
+            <p>No rounds have been created for this quest yet.</p>
+            <button class="btn btn-primary" @onclick="() => ShowRoundModal(true)">
+                Create First Round
+            </button>
+        </div>
+    }
+    else
+    {
+        <div class="rounds-list">
+            @foreach (var round in rounds.OrderBy(r => r.Number))
+            {
+                <div class="round-card">
+                    <div class="round-header">
+                        <div class="round-number">Round @round.Number</div>
+                        <h2>@round.Title</h2>
+                        <div class="round-actions">
+                            <button class="btn btn-sm btn-secondary" @onclick="() => EditRound(round)">
+                                Edit
+                            </button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteRound(round.Id)">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                    <p class="round-description">@round.Description</p>
+                </div>
+            }
+        </div>
+    }
+
+    @if (showRoundModal)
+    {
+        <div class="modal-backdrop" @onclick="CloseRoundModal"></div>
+        <div class="modal-container" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>@(roundModel.Id == Guid.Empty ? "Add New Round" : "Edit Round")</h3>
+                <button class="close-button" @onclick="CloseRoundModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <EditForm Model="roundModel" OnValidSubmit="SaveRound">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    <div class="form-group">
+                        <label for="roundNumber">Round Number</label>
+                        <InputNumber id="roundNumber" @bind-Value="roundModel.Number" class="form-control" min="1" />
+                        <ValidationMessage For="@(() => roundModel.Number)" />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="title">Title</label>
+                        <InputText id="title" @bind-Value="roundModel.Title" class="form-control" />
+                        <ValidationMessage For="@(() => roundModel.Title)" />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="description">Description</label>
+                        <InputTextArea id="description" @bind-Value="roundModel.Description" class="form-control" rows="4" />
+                        <ValidationMessage For="@(() => roundModel.Description)" />
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseRoundModal">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary" disabled="@isRoundSaving">
+                            @if (isRoundSaving)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                <span>Saving...</span>
+                            }
+                            else
+                            {
+                                <span>Save Round</span>
+                            }
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    /* General Styles */
+    :root {
+        --primary-color: #6a0dad;
+        --secondary-color: #8a2be2;
+        --danger-color: #dc3545;
+        --success-color: #28a745;
+        --warning-color: #ffc107;
+        --background-dark: #1a1a1a;
+        --card-background: #2a2a2a;
+        --card-background-light: #3a3a3a;
+        --text-color: #fff;
+        --text-color-muted: #ddd;
+        --border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .round-editor-container {
+        background-color: var(--card-background);
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .editor-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 1rem;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 1rem;
+    }
+
+    /* Loading Styles */
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        min-height: 200px;
+    }
+
+    .spinner {
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top: 4px solid var(--primary-color);
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Empty State */
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1.5rem;
+        padding: 3rem;
+        text-align: center;
+        background-color: var(--card-background-light);
+        border-radius: 8px;
+    }
+
+    /* Rounds List */
+    .rounds-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .round-card {
+        background-color: var(--card-background-light);
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .round-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .round-number {
+        background-color: var(--primary-color);
+        color: white;
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 0.875rem;
+        margin-right: 1rem;
+    }
+
+    .round-actions {
+        margin-left: auto;
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .round-description {
+        color: var(--text-color-muted);
+        margin-bottom: 0;
+    }
+
+    /* Form Styles */
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-control {
+        background-color: var(--card-background-light);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        padding: 0.75rem;
+        border-radius: 4px;
+        width: 100%;
+    }
+
+    .form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+        margin-top: 2rem;
+    }
+
+    /* Button Styles */
+    .btn {
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-weight: bold;
+        cursor: pointer;
+        border: none;
+        transition: background-color 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-primary {
+        background-color: var(--primary-color);
+        color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background-color: var(--secondary-color);
+    }
+
+    .btn-secondary {
+        background-color: var(--card-background-light);
+        color: white;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+        background-color: #4a4a4a;
+    }
+
+    .btn-danger {
+        background-color: var(--danger-color);
+        color: white;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+        background-color: #bd2130;
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    /* Modal Styles */
+    .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+    }
+
+    .modal-container {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: var(--card-background);
+        border-radius: 8px;
+        width: 90%;
+        max-width: 600px;
+        z-index: 1001;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .modal-header h3 {
+        margin: 0;
+    }
+
+    .close-button {
+        background: none;
+        border: none;
+        color: var(--text-color);
+        font-size: 1.5rem;
+        cursor: pointer;
+    }
+
+    .modal-body {
+        padding: 1.5rem;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public Guid QuestId { get; set; }
+
+    private string questTitle = string.Empty;
+    private List<Round> rounds = new List<Round>();
+    private bool isLoading = true;
+    private bool showRoundModal = false;
+    private bool isRoundSaving = false;
+    private Round roundModel = new Round();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadQuest();
+        await LoadRounds();
+        isLoading = false;
+    }
+
+    private async Task LoadQuest()
+    {
+        try
+        {
+            var quest = await ApiService.GetQuest(QuestId);
+            questTitle = quest.Title;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            NavigationManager.NavigateTo("/admin/dashboard");
+        }
+    }
+
+    private async Task LoadRounds()
+    {
+        try
+        {
+            rounds = await ApiService.GetRoundsForQuest(QuestId);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            // Handle error
+        }
+    }
+
+    private void ShowRoundModal(bool isNew)
+    {
+        if (isNew)
+        {
+            // Set next available round number
+            int nextNumber = 1;
+            if (rounds.Any())
+            {
+                nextNumber = rounds.Max(r => r.Number) + 1;
+            }
+
+            roundModel = new Round
+            {
+                QuestId = QuestId,
+                Number = nextNumber
+            };
+        }
+        
+        showRoundModal = true;
+    }
+
+    private void CloseRoundModal()
+    {
+        showRoundModal = false;
+    }
+
+    private void EditRound(Round round)
+    {
+        roundModel = new Round
+        {
+            Id = round.Id,
+            QuestId = round.QuestId,
+            Number = round.Number,
+            Title = round.Title,
+            Description = round.Description
+        };
+        
+        showRoundModal = true;
+    }
+
+    private async Task SaveRound()
+    {
+        isRoundSaving = true;
+
+        try
+        {
+            if (roundModel.Id == Guid.Empty)
+            {
+                // Create new round
+                await ApiService.CreateRound(QuestId, roundModel);
+            }
+            else
+            {
+                // Update existing round
+                await ApiService.UpdateRound(roundModel);
+            }
+
+            // Reload rounds
+            await LoadRounds();
+            CloseRoundModal();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            // Handle error
+        }
+        finally
+        {
+            isRoundSaving = false;
+        }
+    }
+
+    private async Task DeleteRound(Guid roundId)
+    {
+        try
+        {
+            await ApiService.DeleteRound(roundId);
+            
+            // Reload rounds
+            await LoadRounds();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            // Handle error
+        }
+    }
+
+    private void NavigateBack()
+    {
+        NavigationManager.NavigateTo($"/admin/quests/{QuestId}");
+    }
+} 

@@ -1,0 +1,653 @@
+@page "/admin/quests/create"
+@page "/admin/quests/{QuestId:guid}"
+@using DetectiveMysteryGamePlatform.Client.Services
+@using DetectiveMysteryGamePlatform.Shared.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiService ApiService
+@inject NavigationManager NavigationManager
+
+<h1>@(isNewQuest ? "Create New Quest" : "Edit Quest")</h1>
+
+<div class="quest-editor-container">
+    @if (isLoading)
+    {
+        <div class="loading-container">
+            <div class="spinner"></div>
+            <p>Loading...</p>
+        </div>
+    }
+    else
+    {
+        <div class="editor-tabs">
+            <button class="tab-button @(activeTab == "details" ? "active" : "")" @onclick="() => SetActiveTab("details")">
+                Quest Details
+            </button>
+            <button class="tab-button @(activeTab == "characters" ? "active" : "")" 
+                    @onclick="() => SetActiveTab("characters")" 
+                    disabled="@(isNewQuest)">
+                Characters
+            </button>
+        </div>
+
+        <div class="editor-content">
+            @if (activeTab == "details")
+            {
+                <div class="quest-details-editor">
+                    <EditForm Model="quest" OnValidSubmit="SaveQuest">
+                        <DataAnnotationsValidator />
+                        <ValidationSummary />
+
+                        <div class="form-group">
+                            <label for="title">Title</label>
+                            <InputText id="title" @bind-Value="quest.Title" class="form-control" />
+                            <ValidationMessage For="@(() => quest.Title)" />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="description">Description</label>
+                            <InputTextArea id="description" @bind-Value="quest.Description" class="form-control" rows="4" />
+                            <ValidationMessage For="@(() => quest.Description)" />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="numberOfRounds">Number of Rounds</label>
+                            <InputNumber id="numberOfRounds" @bind-Value="quest.NumberOfRounds" class="form-control" min="1" />
+                            <ValidationMessage For="@(() => quest.NumberOfRounds)" />
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" @onclick="NavigateBack">
+                                Cancel
+                            </button>
+                            <button type="submit" class="btn btn-primary" disabled="@isSaving">
+                                @if (isSaving)
+                                {
+                                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                    <span>Saving...</span>
+                                }
+                                else
+                                {
+                                    <span>Save Quest</span>
+                                }
+                            </button>
+                        </div>
+                    </EditForm>
+                </div>
+            }
+            else if (activeTab == "characters")
+            {
+                <div class="characters-editor">
+                    <div class="section-header">
+                        <h2>Characters</h2>
+                        <button class="btn btn-primary" @onclick="() => ShowCharacterModal(true)">
+                            Add Character
+                        </button>
+                    </div>
+
+                    @if (characters == null || !characters.Any())
+                    {
+                        <p>No characters added to this quest yet.</p>
+                    }
+                    else
+                    {
+                        <div class="character-list">
+                            @foreach (var character in characters)
+                            {
+                                <div class="character-card">
+                                    <div class="character-header">
+                                        <h3>@character.Name</h3>
+                                        <div class="character-actions">
+                                            <button class="btn btn-sm btn-secondary" @onclick="() => EditCharacter(character)">
+                                                Edit
+                                            </button>
+                                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteCharacter(character.Id)">
+                                                Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p>@character.Description</p>
+                                    <div class="character-meta">
+                                        <span class="badge @(character.IsPublicInfo ? "badge-public" : "badge-private")">
+                                            @(character.IsPublicInfo ? "Public Information" : "Private Information")
+                                        </span>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        @if (!isNewQuest)
+        {
+            <div class="additional-actions">
+                <button class="btn btn-primary" @onclick="NavigateToRounds">
+                    Manage Rounds
+                </button>
+                <button class="btn btn-success" @onclick="NavigateToPdfUpload">
+                    Upload PDF
+                </button>
+            </div>
+        }
+    }
+
+    @if (showCharacterModal)
+    {
+        <div class="modal-backdrop" @onclick="CloseCharacterModal"></div>
+        <div class="modal-container" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>@(characterModel.Id == Guid.Empty ? "Add New Character" : "Edit Character")</h3>
+                <button class="close-button" @onclick="CloseCharacterModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <EditForm Model="characterModel" OnValidSubmit="SaveCharacter">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    <div class="form-group">
+                        <label for="name">Name</label>
+                        <InputText id="name" @bind-Value="characterModel.Name" class="form-control" />
+                        <ValidationMessage For="@(() => characterModel.Name)" />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="charDescription">Description</label>
+                        <InputTextArea id="charDescription" @bind-Value="characterModel.Description" class="form-control" rows="4" />
+                        <ValidationMessage For="@(() => characterModel.Description)" />
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-container">
+                            <InputCheckbox @bind-Value="characterModel.IsPublicInfo" />
+                            <span class="checkbox-label">Public Information</span>
+                        </label>
+                        <small class="form-text text-muted">
+                            If checked, this character's information will be visible to all players.
+                        </small>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseCharacterModal">
+                            Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary" disabled="@isCharacterSaving">
+                            @if (isCharacterSaving)
+                            {
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                <span>Saving...</span>
+                            }
+                            else
+                            {
+                                <span>Save Character</span>
+                            }
+                        </button>
+                    </div>
+                </EditForm>
+            </div>
+        </div>
+    }
+}
+
+<style>
+    /* General Styles */
+    :root {
+        --primary-color: #6a0dad;
+        --secondary-color: #8a2be2;
+        --danger-color: #dc3545;
+        --success-color: #28a745;
+        --warning-color: #ffc107;
+        --background-dark: #1a1a1a;
+        --card-background: #2a2a2a;
+        --card-background-light: #3a3a3a;
+        --text-color: #fff;
+        --text-color-muted: #ddd;
+        --border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .quest-editor-container {
+        background-color: var(--card-background);
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Loading Styles */
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        min-height: 200px;
+    }
+
+    .spinner {
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top: 4px solid var(--primary-color);
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Tabs Styles */
+    .editor-tabs {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 0.5rem;
+    }
+
+    .tab-button {
+        background-color: transparent;
+        border: none;
+        color: var(--text-color-muted);
+        font-size: 1rem;
+        font-weight: 500;
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all 0.2s;
+    }
+
+    .tab-button:hover:not(:disabled) {
+        color: var(--text-color);
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .tab-button.active {
+        color: var(--primary-color);
+        border-bottom: 2px solid var(--primary-color);
+    }
+
+    .tab-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* Form Styles */
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-control {
+        background-color: var(--card-background-light);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        padding: 0.75rem;
+        border-radius: 4px;
+        width: 100%;
+    }
+
+    .form-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+        margin-top: 2rem;
+    }
+
+    /* Button Styles */
+    .btn {
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-weight: bold;
+        cursor: pointer;
+        border: none;
+        transition: background-color 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-primary {
+        background-color: var(--primary-color);
+        color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background-color: var(--secondary-color);
+    }
+
+    .btn-secondary {
+        background-color: var(--card-background-light);
+        color: white;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+        background-color: #4a4a4a;
+    }
+
+    .btn-danger {
+        background-color: var(--danger-color);
+        color: white;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+        background-color: #bd2130;
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .btn-sm {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    /* Characters Section */
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .character-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .character-card {
+        background-color: var(--card-background-light);
+        border-radius: 8px;
+        padding: 1.5rem;
+        position: relative;
+    }
+
+    .character-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+    }
+
+    .character-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .character-meta {
+        margin-top: 1rem;
+    }
+
+    .badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+
+    .badge-public {
+        background-color: var(--success-color);
+        color: white;
+    }
+
+    .badge-private {
+        background-color: var(--warning-color);
+        color: black;
+    }
+
+    /* Checkbox Styles */
+    .checkbox-container {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+    }
+
+    .checkbox-label {
+        font-size: 1rem;
+    }
+
+    /* Modal Styles */
+    .modal-backdrop {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 1000;
+    }
+
+    .modal-container {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: var(--card-background);
+        border-radius: 8px;
+        width: 90%;
+        max-width: 600px;
+        z-index: 1001;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .modal-header h3 {
+        margin: 0;
+    }
+
+    .close-button {
+        background: none;
+        border: none;
+        color: var(--text-color);
+        font-size: 1.5rem;
+        cursor: pointer;
+    }
+
+    .modal-body {
+        padding: 1.5rem;
+    }
+
+    /* Additional Actions */
+    .additional-actions {
+        margin-top: 2rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        justify-content: center;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public Guid? QuestId { get; set; }
+
+    private bool isLoading = true;
+    private bool isSaving = false;
+    private bool isNewQuest => QuestId == null;
+    private string activeTab = "details";
+    private Quest quest = new Quest();
+    private List<Character> characters = new List<Character>();
+
+    // Character modal related properties
+    private bool showCharacterModal = false;
+    private bool isCharacterSaving = false;
+    private Character characterModel = new Character();
+
+    protected override async Task OnInitializedAsync()
+    {
+        quest.NumberOfRounds = 3; // Default value
+        
+        if (!isNewQuest)
+        {
+            await LoadQuest();
+            await LoadCharacters();
+        }
+        
+        isLoading = false;
+    }
+
+    private async Task LoadQuest()
+    {
+        try
+        {
+            quest = await ApiService.GetQuest(QuestId.Value);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            NavigationManager.NavigateTo("/admin/dashboard");
+        }
+    }
+
+    private async Task LoadCharacters()
+    {
+        try
+        {
+            characters = await ApiService.GetCharactersByQuest(QuestId.Value);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
+
+    private void SetActiveTab(string tab)
+    {
+        activeTab = tab;
+    }
+
+    private async Task SaveQuest()
+    {
+        isSaving = true;
+
+        try
+        {
+            if (isNewQuest)
+            {
+                var createdQuest = await ApiService.CreateQuest(quest);
+                NavigationManager.NavigateTo($"/admin/quests/{createdQuest.Id}");
+            }
+            else
+            {
+                await ApiService.UpdateQuest(quest);
+                // Stay on the same page
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            // Handle error (show error message, etc.)
+        }
+        finally
+        {
+            isSaving = false;
+        }
+    }
+
+    private void ShowCharacterModal(bool isNew)
+    {
+        if (isNew)
+        {
+            characterModel = new Character
+            {
+                QuestId = QuestId.Value,
+                IsPublicInfo = false
+            };
+        }
+        
+        showCharacterModal = true;
+    }
+
+    private void CloseCharacterModal()
+    {
+        showCharacterModal = false;
+    }
+
+    private void EditCharacter(Character character)
+    {
+        characterModel = new Character
+        {
+            Id = character.Id,
+            QuestId = character.QuestId,
+            Name = character.Name,
+            Description = character.Description,
+            IsPublicInfo = character.IsPublicInfo,
+            AvatarImagePath = character.AvatarImagePath
+        };
+        
+        showCharacterModal = true;
+    }
+
+    private async Task SaveCharacter()
+    {
+        isCharacterSaving = true;
+
+        try
+        {
+            if (characterModel.Id == Guid.Empty)
+            {
+                await ApiService.CreateCharacter(QuestId.Value, characterModel);
+            }
+            else
+            {
+                await ApiService.UpdateCharacter(characterModel);
+            }
+
+            // Reload characters
+            await LoadCharacters();
+            CloseCharacterModal();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            // Handle error (show error message, etc.)
+        }
+        finally
+        {
+            isCharacterSaving = false;
+        }
+    }
+
+    private async Task DeleteCharacter(Guid characterId)
+    {
+        try
+        {
+            await ApiService.DeleteCharacter(characterId);
+            
+            // Reload characters
+            await LoadCharacters();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            // Handle error (show error message, etc.)
+        }
+    }
+
+    private void NavigateBack()
+    {
+        NavigationManager.NavigateTo("/admin/dashboard");
+    }
+
+    private void NavigateToRounds()
+    {
+        NavigationManager.NavigateTo($"/admin/quests/{QuestId}/rounds");
+    }
+
+    private void NavigateToPdfUpload()
+    {
+        NavigationManager.NavigateTo($"/admin/quests/{QuestId}/pdf-upload");
+    }
+} 

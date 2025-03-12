@@ -1,0 +1,500 @@
+@page "/play/{Token}"
+@using DetectiveMysteryGamePlatform.Client.Services
+@using DetectiveMysteryGamePlatform.Shared.Models
+@inject ApiService ApiService
+@inject GameHubService GameHubService
+@inject NavigationManager NavigationManager
+
+@if (isLoading)
+{
+    <div class="loading-container">
+        <div class="spinner"></div>
+        <p>Loading game...</p>
+    </div>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="error-container">
+        <h2>Error</h2>
+        <p>@errorMessage</p>
+        <button class="btn btn-primary" @onclick="ReloadPage">Try Again</button>
+    </div>
+}
+else if (!hasJoined)
+{
+    <div class="join-container">
+        <div class="join-card">
+            <h2>@gameInfo.QuestTitle</h2>
+            <p>@gameInfo.QuestDescription</p>
+            
+            <EditForm Model="@joinModel" OnValidSubmit="JoinGame">
+                <DataAnnotationsValidator />
+                
+                <div class="form-group">
+                    <label for="playerName">Your Name</label>
+                    <InputText id="playerName" @bind-Value="joinModel.PlayerName" class="form-control" />
+                    <ValidationMessage For="@(() => joinModel.PlayerName)" />
+                </div>
+                
+                <button type="submit" class="btn btn-primary" disabled="@isJoining">
+                    @if (isJoining)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span>Joining...</span>
+                    }
+                    else
+                    {
+                        <span>Join Game</span>
+                    }
+                </button>
+            </EditForm>
+        </div>
+    </div>
+}
+else
+{
+    <div class="game-container">
+        <div class="game-header">
+            <h1>@gameInfo.QuestTitle</h1>
+            <div class="round-info">
+                <span>Round @gameInfo.CurrentRoundNumber: @gameInfo.CurrentRoundTitle</span>
+            </div>
+        </div>
+        
+        <div class="game-content">
+            <div class="sidebar">
+                <div class="character-info">
+                    @if (gameInfo.HasCharacterAssigned && character != null)
+                    {
+                        <h3>Your Character</h3>
+                        <div class="character-card">
+                            <h4>@character.Name</h4>
+                            <p>@character.Description</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <h3>Waiting for Character Assignment</h3>
+                        <p>The game master will assign you a character soon.</p>
+                    }
+                </div>
+                
+                <div class="public-characters">
+                    <h3>Other Characters</h3>
+                    @if (publicCharacters == null || !publicCharacters.Any())
+                    {
+                        <p>No public character information available.</p>
+                    }
+                    else
+                    {
+                        @foreach (var pubChar in publicCharacters)
+                        {
+                            <div class="character-card">
+                                <h4>@pubChar.Name</h4>
+                                <p>@pubChar.Description</p>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+            
+            <div class="main-content">
+                @if (currentRound == null)
+                {
+                    <div class="loading-container">
+                        <div class="spinner"></div>
+                        <p>Loading round information...</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="round-content">
+                        <h2>@currentRound.Title</h2>
+                        <p>@currentRound.Description</p>
+                        
+                        @if (currentRound.PublicContent.Any())
+                        {
+                            <div class="content-section">
+                                <h3>Public Information</h3>
+                                @foreach (var content in currentRound.PublicContent)
+                                {
+                                    <div class="content-card">
+                                        <h4>@content.Title</h4>
+                                        <div class="content-image">
+                                            <img src="@content.ImagePath" alt="@content.Title" />
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        
+                        @if (currentRound.CharacterContent.Any())
+                        {
+                            <div class="content-section">
+                                <h3>Your Character's Information</h3>
+                                @foreach (var content in currentRound.CharacterContent)
+                                {
+                                    <div class="content-card">
+                                        <h4>@content.Title</h4>
+                                        <div class="content-image">
+                                            <img src="@content.ImagePath" alt="@content.Title" />
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    /* General Styles */
+    :root {
+        --primary-color: #6a0dad;
+        --secondary-color: #8a2be2;
+        --background-dark: #1a1a1a;
+        --card-background: #2a2a2a;
+        --card-background-light: #3a3a3a;
+        --text-color: #fff;
+        --text-color-muted: #ddd;
+    }
+
+    body {
+        background-color: var(--background-dark);
+        color: var(--text-color);
+        margin: 0;
+        padding: 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    /* Loading Styles */
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+    }
+
+    .spinner {
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top: 4px solid var(--primary-color);
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Error Styles */
+    .error-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        text-align: center;
+        padding: 0 1rem;
+    }
+
+    /* Join Game Styles */
+    .join-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        padding: 1rem;
+    }
+
+    .join-card {
+        background-color: var(--card-background);
+        border-radius: 8px;
+        padding: 2rem;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        width: 100%;
+        max-width: 500px;
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-control {
+        background-color: var(--card-background-light);
+        border: none;
+        color: var(--text-color);
+        padding: 0.75rem;
+        border-radius: 4px;
+        width: 100%;
+    }
+
+    /* Game View Styles */
+    .game-container {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+    }
+
+    .game-header {
+        background-color: var(--card-background);
+        padding: 1rem 2rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .round-info {
+        background-color: var(--primary-color);
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-weight: bold;
+    }
+
+    .game-content {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+    }
+
+    .sidebar {
+        width: 300px;
+        background-color: var(--card-background);
+        padding: 1.5rem;
+        overflow-y: auto;
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .main-content {
+        flex: 1;
+        padding: 1.5rem;
+        overflow-y: auto;
+    }
+
+    .character-card {
+        background-color: var(--card-background-light);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .content-section {
+        margin-bottom: 2rem;
+    }
+
+    .content-card {
+        background-color: var(--card-background);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .content-image {
+        margin-top: 1rem;
+        text-align: center;
+    }
+
+    .content-image img {
+        max-width: 100%;
+        border-radius: 4px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    h1, h2, h3, h4 {
+        color: var(--text-color);
+        margin-top: 0;
+    }
+
+    p {
+        color: var(--text-color-muted);
+    }
+
+    .btn {
+        padding: 0.75rem 1.5rem;
+        border-radius: 4px;
+        font-weight: bold;
+        cursor: pointer;
+        border: none;
+        transition: background-color 0.3s;
+    }
+
+    .btn-primary {
+        background-color: var(--primary-color);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background-color: var(--secondary-color);
+    }
+</style>
+
+@code {
+    [Parameter]
+    public string Token { get; set; }
+
+    private bool isLoading = true;
+    private bool hasJoined = false;
+    private bool isJoining = false;
+    private string errorMessage = string.Empty;
+    private JoinModel joinModel = new JoinModel();
+    private GameInfoResponse gameInfo;
+    private CharacterResponse character;
+    private List<CharacterResponse> publicCharacters;
+    private RoundResponse currentRound;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // Load initial game info
+            gameInfo = await ApiService.GetGameInfo(Token);
+            
+            // Check if player has already joined
+            if (!string.IsNullOrEmpty(gameInfo.PlayerName))
+            {
+                hasJoined = true;
+                await LoadGameData();
+                
+                // Connect to SignalR hub
+                await ConnectToGameHub();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Failed to load game. The invitation link may be invalid or expired.";
+            Console.WriteLine(ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task JoinGame()
+    {
+        isJoining = true;
+        
+        try
+        {
+            await ApiService.JoinGame(Token, joinModel.PlayerName);
+            
+            // Reload game info
+            gameInfo = await ApiService.GetGameInfo(Token);
+            hasJoined = true;
+            
+            // Load game data
+            await LoadGameData();
+            
+            // Connect to SignalR hub
+            await ConnectToGameHub();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Failed to join the game. Please try again.";
+            Console.WriteLine(ex.Message);
+        }
+        finally
+        {
+            isJoining = false;
+        }
+    }
+
+    private async Task LoadGameData()
+    {
+        try
+        {
+            // Load character info if assigned
+            if (gameInfo.HasCharacterAssigned)
+            {
+                character = await ApiService.GetPlayerCharacter(Token);
+            }
+            
+            // Load public characters
+            publicCharacters = await ApiService.GetPublicCharacters(Token);
+            
+            // Load current round
+            currentRound = await ApiService.GetCurrentRound(Token);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
+
+    private async Task ConnectToGameHub()
+    {
+        try
+        {
+            await GameHubService.StartConnection(gameInfo.QuestTitle);
+            
+            // Register event handlers
+            GameHubService.OnRoundAdvanced += HandleRoundAdvanced;
+            GameHubService.OnContentRevealed += HandleContentRevealed;
+            GameHubService.OnGameStatusChanged += HandleGameStatusChanged;
+            
+            // Update connection status
+            await GameHubService.UpdateConnectionStatus(
+                gameInfo.QuestTitle,
+                gameInfo.PlayerName,
+                true
+            );
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
+
+    private async Task HandleRoundAdvanced(int newRoundNumber, string newRoundTitle)
+    {
+        // Reload game data
+        await LoadGameData();
+        StateHasChanged();
+    }
+
+    private async Task HandleContentRevealed(string contentTitle)
+    {
+        // Reload game data
+        await LoadGameData();
+        StateHasChanged();
+    }
+
+    private async Task HandleGameStatusChanged(string newStatus)
+    {
+        // Reload game info
+        gameInfo = await ApiService.GetGameInfo(Token);
+        StateHasChanged();
+    }
+
+    private void ReloadPage()
+    {
+        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
+    }
+
+    public class JoinModel
+    {
+        [Required(ErrorMessage = "Please enter your name")]
+        public string PlayerName { get; set; } = string.Empty;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Disconnect from SignalR hub
+        if (GameHubService.IsConnected)
+        {
+            GameHubService.OnRoundAdvanced -= HandleRoundAdvanced;
+            GameHubService.OnContentRevealed -= HandleContentRevealed;
+            GameHubService.OnGameStatusChanged -= HandleGameStatusChanged;
+            
+            await GameHubService.StopConnection(gameInfo?.QuestTitle);
+        }
+    }
+} 

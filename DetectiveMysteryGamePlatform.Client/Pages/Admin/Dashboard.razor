@@ -1,0 +1,221 @@
+@page "/admin/dashboard"
+@using DetectiveMysteryGamePlatform.Client.Services
+@using DetectiveMysteryGamePlatform.Shared.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiService ApiService
+@inject NavigationManager NavigationManager
+
+<h1>Admin Dashboard</h1>
+
+<div class="dashboard-container">
+    <div class="dashboard-section">
+        <div class="section-header">
+            <h2>Quests</h2>
+            <button class="btn btn-primary" @onclick="() => NavigationManager.NavigateTo("/admin/quests/create")">
+                <i class="fas fa-plus"></i> Create New Quest
+            </button>
+        </div>
+
+        @if (quests == null)
+        {
+            <p>Loading quests...</p>
+        }
+        else if (!quests.Any())
+        {
+            <p>No quests found. Create your first quest to get started.</p>
+        }
+        else
+        {
+            <div class="quest-cards">
+                @foreach (var quest in quests)
+                {
+                    <div class="quest-card">
+                        <h3>@quest.Title</h3>
+                        <p>@quest.Description</p>
+                        <p><strong>Rounds:</strong> @quest.NumberOfRounds</p>
+                        <p><strong>Created:</strong> @quest.CreatedAt.ToShortDateString()</p>
+                        <div class="card-actions">
+                            <button class="btn btn-secondary" @onclick="() => NavigationManager.NavigateTo($"/admin/quests/{quest.Id}")">
+                                <i class="fas fa-edit"></i> Edit
+                            </button>
+                            <button class="btn btn-success" @onclick="() => CreateGameSession(quest.Id)">
+                                <i class="fas fa-play"></i> Start Game
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="dashboard-section">
+        <div class="section-header">
+            <h2>Active Game Sessions</h2>
+        </div>
+
+        @if (gameSessions == null)
+        {
+            <p>Loading game sessions...</p>
+        }
+        else if (!gameSessions.Any())
+        {
+            <p>No active game sessions found.</p>
+        }
+        else
+        {
+            <div class="session-cards">
+                @foreach (var session in gameSessions.Where(s => s.Status != GameSessionStatus.Completed))
+                {
+                    <div class="session-card">
+                        <h3>@GetQuestTitle(session.QuestId)</h3>
+                        <p><strong>Status:</strong> @session.Status</p>
+                        <p><strong>Created:</strong> @session.CreatedAt.ToShortDateString()</p>
+                        <div class="card-actions">
+                            <button class="btn btn-primary" @onclick="() => NavigationManager.NavigateTo($"/admin/game-sessions/{session.Id}")">
+                                <i class="fas fa-gamepad"></i> Manage
+                            </button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .dashboard-container {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 2rem;
+    }
+
+    @media (min-width: 768px) {
+        .dashboard-container {
+            grid-template-columns: 1fr 1fr;
+        }
+    }
+
+    .dashboard-section {
+        background-color: #2a2a2a;
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .quest-cards, .session-cards {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    .quest-card, .session-card {
+        background-color: #3a3a3a;
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .card-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1rem;
+    }
+
+    .btn {
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-weight: bold;
+        cursor: pointer;
+        border: none;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-primary {
+        background-color: #6a0dad;
+        color: white;
+    }
+
+    .btn-secondary {
+        background-color: #4a4a4a;
+        color: white;
+    }
+
+    .btn-success {
+        background-color: #28a745;
+        color: white;
+    }
+
+    h1 {
+        margin-bottom: 2rem;
+        color: #fff;
+    }
+
+    h2 {
+        margin: 0;
+        color: #fff;
+    }
+
+    h3 {
+        margin-top: 0;
+        color: #fff;
+    }
+
+    p {
+        color: #ddd;
+    }
+</style>
+
+@code {
+    private List<Quest> quests;
+    private List<GameSession> gameSessions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        try
+        {
+            quests = await ApiService.GetQuests();
+            gameSessions = await ApiService.GetGameSessions();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            // Handle error (show error message, etc.)
+        }
+    }
+
+    private string GetQuestTitle(Guid questId)
+    {
+        var quest = quests?.FirstOrDefault(q => q.Id == questId);
+        return quest?.Title ?? "Unknown Quest";
+    }
+
+    private async Task CreateGameSession(Guid questId)
+    {
+        try
+        {
+            var gameSession = await ApiService.CreateGameSession(questId);
+            NavigationManager.NavigateTo($"/admin/game-sessions/{gameSession.Id}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            // Handle error (show error message, etc.)
+        }
+    }
+} 

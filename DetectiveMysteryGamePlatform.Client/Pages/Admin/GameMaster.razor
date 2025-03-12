@@ -1,0 +1,811 @@
+@page "/admin/game/{SessionId:int}"
+@using DetectiveMysteryGamePlatform.Client.Services
+@using DetectiveMysteryGamePlatform.Shared.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiService ApiService
+@inject GameHubService GameHubService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<AuthorizeView Roles="Admin">
+    <Authorized>
+        @if (isLoading)
+        {
+            <div class="loading-container">
+                <div class="spinner"></div>
+                <p>Loading game session...</p>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="error-container">
+                <h2>Error</h2>
+                <p>@errorMessage</p>
+                <button class="btn btn-primary" @onclick="ReloadPage">Try Again</button>
+                <button class="btn btn-secondary" @onclick="GoToDashboard">Back to Dashboard</button>
+            </div>
+        }
+        else
+        {
+            <div class="game-master-container">
+                <div class="game-header">
+                    <div class="game-title">
+                        <h1>@gameSession.QuestTitle</h1>
+                        <span class="game-status @gameSession.Status.ToLower()">@gameSession.Status</span>
+                    </div>
+                    <div class="game-actions">
+                        <button class="btn btn-primary" @onclick="CopyInviteLink">Copy Invite Link</button>
+                        <button class="btn @(gameSession.Status == "Active" ? "btn-danger" : "btn-success")" @onclick="ToggleGameStatus">
+                            @(gameSession.Status == "Active" ? "End Game" : "Start Game")
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="game-content">
+                    <div class="sidebar">
+                        <div class="section">
+                            <h2>Players (@connectedPlayers.Count/@gameSession.MaxPlayers)</h2>
+                            @if (!connectedPlayers.Any())
+                            {
+                                <p>No players have joined yet.</p>
+                            }
+                            else
+                            {
+                                <div class="player-list">
+                                    @foreach (var player in connectedPlayers)
+                                    {
+                                        <div class="player-card @(player.IsConnected ? "connected" : "disconnected")">
+                                            <span class="player-name">@player.Name</span>
+                                            <div class="player-actions">
+                                                <select class="character-select" value="@player.AssignedCharacterId" 
+                                                        @onchange="@(e => AssignCharacter(player.Name, Convert.ToInt32(e.Value)))">
+                                                    <option value="0">-- Assign Character --</option>
+                                                    @foreach (var character in availableCharacters)
+                                                    {
+                                                        <option value="@character.Id" 
+                                                                disabled="@(character.IsAssigned && character.Id != player.AssignedCharacterId)">
+                                                            @character.Name @(character.IsAssigned && character.Id != player.AssignedCharacterId ? "(Assigned)" : "")
+                                                        </option>
+                                                    }
+                                                </select>
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        
+                        <div class="section">
+                            <h2>Characters</h2>
+                            @if (!availableCharacters.Any())
+                            {
+                                <p>No characters available for this quest.</p>
+                            }
+                            else
+                            {
+                                <div class="character-list">
+                                    @foreach (var character in availableCharacters)
+                                    {
+                                        <div class="character-card @(character.IsAssigned ? "assigned" : "")">
+                                            <h3>@character.Name</h3>
+                                            <p>@character.Description</p>
+                                            <div class="character-status">
+                                                @if (character.IsAssigned)
+                                                {
+                                                    <span>Assigned to: @(connectedPlayers.FirstOrDefault(p => p.AssignedCharacterId == character.Id)?.Name ?? "Unknown")</span>
+                                                }
+                                                else
+                                                {
+                                                    <span>Not Assigned</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    
+                    <div class="main-content">
+                        <div class="section">
+                            <div class="section-header">
+                                <h2>Game Rounds</h2>
+                                <div class="round-navigation">
+                                    <button class="btn btn-secondary" @onclick="PreviousRound" disabled="@(currentRoundIndex <= 0)">
+                                        Previous
+                                    </button>
+                                    <span class="round-indicator">Round @(currentRoundIndex + 1) of @rounds.Count</span>
+                                    <button class="btn btn-primary" @onclick="NextRound" disabled="@(currentRoundIndex >= rounds.Count - 1)">
+                                        Next Round
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            @if (rounds.Any() && currentRoundIndex < rounds.Count)
+                            {
+                                var round = rounds[currentRoundIndex];
+                                <div class="round-details">
+                                    <h3>@round.Title</h3>
+                                    <p>@round.Description</p>
+                                    
+                                    <div class="content-sections">
+                                        <div class="content-section">
+                                            <h4>Public Content</h4>
+                                            @if (!round.PublicContent.Any())
+                                            {
+                                                <p>No public content for this round.</p>
+                                            }
+                                            else
+                                            {
+                                                <div class="content-list">
+                                                    @foreach (var content in round.PublicContent)
+                                                    {
+                                                        <div class="content-card">
+                                                            <div class="content-header">
+                                                                <h5>@content.Title</h5>
+                                                                <button class="btn @(content.IsRevealed ? "btn-secondary" : "btn-primary")" 
+                                                                        @onclick="() => ToggleContentVisibility(content.Id)"
+                                                                        disabled="@(!gameSession.IsActive)">
+                                                                    @(content.IsRevealed ? "Hide" : "Reveal")
+                                                                </button>
+                                                            </div>
+                                                            <div class="content-preview">
+                                                                @if (!string.IsNullOrEmpty(content.ImagePath))
+                                                                {
+                                                                    <img src="@content.ImagePath" alt="@content.Title" />
+                                                                }
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                        
+                                        <div class="content-section">
+                                            <h4>Character-Specific Content</h4>
+                                            @if (!round.CharacterContent.Any())
+                                            {
+                                                <p>No character-specific content for this round.</p>
+                                            }
+                                            else
+                                            {
+                                                <div class="content-list">
+                                                    @foreach (var characterGroup in round.CharacterContent.GroupBy(c => c.CharacterId))
+                                                    {
+                                                        var character = availableCharacters.FirstOrDefault(c => c.Id == characterGroup.Key);
+                                                        if (character != null)
+                                                        {
+                                                            <div class="character-content-group">
+                                                                <h5>@character.Name</h5>
+                                                                @foreach (var content in characterGroup)
+                                                                {
+                                                                    <div class="content-card">
+                                                                        <div class="content-header">
+                                                                            <h6>@content.Title</h6>
+                                                                            <button class="btn @(content.IsRevealed ? "btn-secondary" : "btn-primary")" 
+                                                                                    @onclick="() => ToggleContentVisibility(content.Id)"
+                                                                                    disabled="@(!gameSession.IsActive)">
+                                                                                @(content.IsRevealed ? "Hide" : "Reveal")
+                                                                            </button>
+                                                                        </div>
+                                                                        <div class="content-preview">
+                                                                            @if (!string.IsNullOrEmpty(content.ImagePath))
+                                                                            {
+                                                                                <img src="@content.ImagePath" alt="@content.Title" />
+                                                                            }
+                                                                        </div>
+                                                                    </div>
+                                                                }
+                                                            </div>
+                                                        }
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <p>No rounds available for this quest.</p>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </Authorized>
+    <NotAuthorized>
+        <div class="unauthorized-container">
+            <h2>Unauthorized</h2>
+            <p>You are not authorized to access this page.</p>
+            <button class="btn btn-primary" @onclick="GoToLogin">Login</button>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>
+
+<style>
+    /* General Styles */
+    :root {
+        --primary-color: #6a0dad;
+        --secondary-color: #8a2be2;
+        --danger-color: #dc3545;
+        --success-color: #28a745;
+        --warning-color: #ffc107;
+        --background-dark: #1a1a1a;
+        --card-background: #2a2a2a;
+        --card-background-light: #3a3a3a;
+        --text-color: #fff;
+        --text-color-muted: #ddd;
+        --border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    body {
+        background-color: var(--background-dark);
+        color: var(--text-color);
+        margin: 0;
+        padding: 0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    /* Loading Styles */
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+    }
+
+    .spinner {
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top: 4px solid var(--primary-color);
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Error Styles */
+    .error-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        text-align: center;
+        padding: 0 1rem;
+    }
+
+    /* Game Master Container */
+    .game-master-container {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+    }
+
+    .game-header {
+        background-color: var(--card-background);
+        padding: 1rem 2rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .game-title {
+        display: flex;
+        align-items: center;
+    }
+
+    .game-status {
+        margin-left: 1rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        font-weight: bold;
+    }
+
+    .game-status.active {
+        background-color: var(--success-color);
+    }
+
+    .game-status.pending {
+        background-color: var(--warning-color);
+        color: #000;
+    }
+
+    .game-status.completed {
+        background-color: var(--danger-color);
+    }
+
+    .game-actions {
+        display: flex;
+        gap: 1rem;
+    }
+
+    .game-content {
+        display: flex;
+        flex: 1;
+        overflow: hidden;
+    }
+
+    .sidebar {
+        width: 350px;
+        background-color: var(--card-background);
+        padding: 1.5rem;
+        overflow-y: auto;
+        border-right: 1px solid var(--border-color);
+    }
+
+    .main-content {
+        flex: 1;
+        padding: 1.5rem;
+        overflow-y: auto;
+    }
+
+    .section {
+        margin-bottom: 2rem;
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .round-navigation {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .round-indicator {
+        font-weight: bold;
+    }
+
+    /* Player Styles */
+    .player-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .player-card {
+        background-color: var(--card-background-light);
+        border-radius: 4px;
+        padding: 0.75rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .player-card.connected {
+        border-left: 4px solid var(--success-color);
+    }
+
+    .player-card.disconnected {
+        border-left: 4px solid var(--danger-color);
+        opacity: 0.7;
+    }
+
+    .player-name {
+        font-weight: bold;
+    }
+
+    .character-select {
+        background-color: var(--card-background);
+        color: var(--text-color);
+        border: 1px solid var(--border-color);
+        padding: 0.5rem;
+        border-radius: 4px;
+    }
+
+    /* Character Styles */
+    .character-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .character-card {
+        background-color: var(--card-background-light);
+        border-radius: 8px;
+        padding: 1rem;
+        position: relative;
+    }
+
+    .character-card.assigned {
+        border: 1px solid var(--primary-color);
+    }
+
+    .character-status {
+        margin-top: 0.5rem;
+        font-size: 0.875rem;
+        color: var(--text-color-muted);
+    }
+
+    /* Content Styles */
+    .content-sections {
+        display: flex;
+        flex-direction: column;
+        gap: 2rem;
+        margin-top: 1.5rem;
+    }
+
+    .content-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 1rem;
+    }
+
+    .content-card {
+        background-color: var(--card-background);
+        border-radius: 8px;
+        padding: 1rem;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .content-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+    }
+
+    .content-preview {
+        margin-top: 0.5rem;
+        text-align: center;
+    }
+
+    .content-preview img {
+        max-width: 100%;
+        max-height: 150px;
+        border-radius: 4px;
+        object-fit: contain;
+    }
+
+    .character-content-group {
+        background-color: var(--card-background-light);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .character-content-group h5 {
+        margin-top: 0;
+        margin-bottom: 1rem;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 0.5rem;
+    }
+
+    /* Button Styles */
+    .btn {
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-weight: bold;
+        cursor: pointer;
+        border: none;
+        transition: background-color 0.3s;
+    }
+
+    .btn-primary {
+        background-color: var(--primary-color);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background-color: var(--secondary-color);
+    }
+
+    .btn-secondary {
+        background-color: var(--card-background-light);
+        color: white;
+    }
+
+    .btn-secondary:hover {
+        background-color: #4a4a4a;
+    }
+
+    .btn-danger {
+        background-color: var(--danger-color);
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background-color: #bd2130;
+    }
+
+    .btn-success {
+        background-color: var(--success-color);
+        color: white;
+    }
+
+    .btn-success:hover {
+        background-color: #218838;
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    /* Unauthorized Styles */
+    .unauthorized-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        text-align: center;
+        padding: 0 1rem;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public int SessionId { get; set; }
+
+    private bool isLoading = true;
+    private string errorMessage = string.Empty;
+    private GameSessionResponse gameSession;
+    private List<PlayerResponse> connectedPlayers = new List<PlayerResponse>();
+    private List<CharacterResponse> availableCharacters = new List<CharacterResponse>();
+    private List<RoundResponse> rounds = new List<RoundResponse>();
+    private int currentRoundIndex = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadGameSession();
+            await ConnectToGameHub();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Failed to load game session. Please try again.";
+            Console.WriteLine(ex.Message);
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadGameSession()
+    {
+        // Load game session details
+        gameSession = await ApiService.GetGameSession(SessionId);
+        
+        // Load connected players
+        connectedPlayers = await ApiService.GetPlayersInSession(SessionId);
+        
+        // Load available characters
+        availableCharacters = await ApiService.GetCharactersForQuest(gameSession.QuestId);
+        
+        // Load rounds
+        rounds = await ApiService.GetRoundsForQuest(gameSession.QuestId);
+        
+        // Set current round index
+        if (gameSession.CurrentRoundNumber > 0 && gameSession.CurrentRoundNumber <= rounds.Count)
+        {
+            currentRoundIndex = gameSession.CurrentRoundNumber - 1;
+        }
+    }
+
+    private async Task ConnectToGameHub()
+    {
+        try
+        {
+            await GameHubService.StartConnection(gameSession.QuestTitle);
+            
+            // Register event handlers
+            GameHubService.OnPlayerJoined += HandlePlayerJoined;
+            GameHubService.OnPlayerLeft += HandlePlayerLeft;
+            GameHubService.OnConnectionStatusChanged += HandleConnectionStatusChanged;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
+
+    private async Task HandlePlayerJoined(string playerName)
+    {
+        // Reload players
+        connectedPlayers = await ApiService.GetPlayersInSession(SessionId);
+        StateHasChanged();
+    }
+
+    private async Task HandlePlayerLeft(string playerName)
+    {
+        // Reload players
+        connectedPlayers = await ApiService.GetPlayersInSession(SessionId);
+        StateHasChanged();
+    }
+
+    private async Task HandleConnectionStatusChanged(string playerName, bool isConnected)
+    {
+        // Update player connection status
+        var player = connectedPlayers.FirstOrDefault(p => p.Name == playerName);
+        if (player != null)
+        {
+            player.IsConnected = isConnected;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AssignCharacter(string playerName, int characterId)
+    {
+        try
+        {
+            await ApiService.AssignCharacterToPlayer(SessionId, playerName, characterId);
+            
+            // Reload players and characters
+            connectedPlayers = await ApiService.GetPlayersInSession(SessionId);
+            availableCharacters = await ApiService.GetCharactersForQuest(gameSession.QuestId);
+            
+            // Notify player of character assignment
+            await GameHubService.NotifyCharacterAssigned(gameSession.QuestTitle, playerName, characterId);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
+
+    private async Task ToggleGameStatus()
+    {
+        try
+        {
+            if (gameSession.Status == "Active")
+            {
+                // End game
+                await ApiService.EndGameSession(SessionId);
+            }
+            else
+            {
+                // Start game
+                await ApiService.StartGameSession(SessionId);
+            }
+            
+            // Reload game session
+            gameSession = await ApiService.GetGameSession(SessionId);
+            
+            // Notify players of game status change
+            await GameHubService.NotifyGameStatusChanged(gameSession.QuestTitle, gameSession.Status);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
+
+    private async Task NextRound()
+    {
+        if (currentRoundIndex < rounds.Count - 1)
+        {
+            currentRoundIndex++;
+            
+            // Update current round in the database
+            await ApiService.AdvanceRound(SessionId, currentRoundIndex + 1);
+            
+            // Reload game session
+            gameSession = await ApiService.GetGameSession(SessionId);
+            
+            // Notify players of round advancement
+            await GameHubService.NotifyRoundAdvanced(
+                gameSession.QuestTitle, 
+                currentRoundIndex + 1, 
+                rounds[currentRoundIndex].Title
+            );
+        }
+    }
+
+    private void PreviousRound()
+    {
+        if (currentRoundIndex > 0)
+        {
+            currentRoundIndex--;
+        }
+    }
+
+    private async Task ToggleContentVisibility(int contentId)
+    {
+        try
+        {
+            await ApiService.ToggleContentVisibility(SessionId, contentId);
+            
+            // Find the content in the rounds
+            foreach (var round in rounds)
+            {
+                var publicContent = round.PublicContent.FirstOrDefault(c => c.Id == contentId);
+                if (publicContent != null)
+                {
+                    publicContent.IsRevealed = !publicContent.IsRevealed;
+                    
+                    // Notify players of content reveal
+                    if (publicContent.IsRevealed)
+                    {
+                        await GameHubService.NotifyContentRevealed(gameSession.QuestTitle, publicContent.Title);
+                    }
+                    
+                    break;
+                }
+                
+                foreach (var characterContent in round.CharacterContent)
+                {
+                    if (characterContent.Id == contentId)
+                    {
+                        characterContent.IsRevealed = !characterContent.IsRevealed;
+                        
+                        // Notify specific player of content reveal
+                        if (characterContent.IsRevealed)
+                        {
+                            var player = connectedPlayers.FirstOrDefault(p => p.AssignedCharacterId == characterContent.CharacterId);
+                            if (player != null)
+                            {
+                                await GameHubService.NotifyContentRevealed(gameSession.QuestTitle, characterContent.Title, player.Name);
+                            }
+                        }
+                        
+                        break;
+                    }
+                }
+            }
+            
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+    }
+
+    private async Task CopyInviteLink()
+    {
+        var baseUrl = NavigationManager.BaseUri;
+        var inviteLink = $"{baseUrl}play/{gameSession.InviteToken}";
+        
+        await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", inviteLink);
+        await JSRuntime.InvokeVoidAsync("alert", "Invite link copied to clipboard!");
+    }
+
+    private void GoToDashboard()
+    {
+        NavigationManager.NavigateTo("/admin/dashboard");
+    }
+
+    private void GoToLogin()
+    {
+        NavigationManager.NavigateTo("/login");
+    }
+
+    private void ReloadPage()
+    {
+        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // Disconnect from SignalR hub
+        if (GameHubService.IsConnected)
+        {
+            GameHubService.OnPlayerJoined -= HandlePlayerJoined;
+            GameHubService.OnPlayerLeft -= HandlePlayerLeft;
+            GameHubService.OnConnectionStatusChanged -= HandleConnectionStatusChanged;
+            
+            await GameHubService.StopConnection(gameSession?.QuestTitle);
+        }
+    }
+} 

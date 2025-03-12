@@ -1,0 +1,391 @@
+@page "/admin/quests/{QuestId:guid}/pdf-upload"
+@using DetectiveMysteryGamePlatform.Client.Services
+@using DetectiveMysteryGamePlatform.Shared.Models
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Forms
+@attribute [Authorize(Roles = "Admin")]
+@inject ApiService ApiService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<div class="pdf-uploader-container">
+    <div class="editor-header">
+        <h1>PDF Upload: @questTitle</h1>
+        <div class="header-actions">
+            <button class="btn btn-secondary" @onclick="NavigateBack">
+                Back to Quest
+            </button>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="loading-container">
+            <div class="spinner"></div>
+            <p>Loading...</p>
+        </div>
+    }
+    else
+    {
+        <div class="upload-section">
+            <h2>Upload PDF Document</h2>
+            <p class="section-description">
+                Upload a PDF document containing content for this quest. 
+                The file should be between 200KB and 5MB in size.
+            </p>
+
+            <InputFile OnChange="HandleFileSelection" accept=".pdf" class="file-input" />
+
+            <div class="upload-info">
+                @if (selectedFile != null)
+                {
+                    <div class="file-details">
+                        <span>Selected file: <strong>@selectedFile.Name</strong></span>
+                        <span>Size: <strong>@FormatFileSize(selectedFile.Size)</strong></span>
+                    </div>
+
+                    <button class="btn btn-primary" 
+                            @onclick="UploadPdf" 
+                            disabled="@(isUploading || selectedFile == null || !IsValidFileSize(selectedFile.Size))">
+                        @if (isUploading)
+                        {
+                            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                            <span>Uploading...</span>
+                        }
+                        else
+                        {
+                            <span>Upload PDF</span>
+                        }
+                    </button>
+                }
+                else
+                {
+                    <p class="empty-selection">No file selected. Click or drag a file to the input above.</p>
+                }
+
+                @if (!IsValidFileSize(selectedFile?.Size ?? 0))
+                {
+                    <div class="validation-error">
+                        File size must be between 200KB and 5MB.
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(uploadedFilePath))
+        {
+            <div class="uploaded-file-section">
+                <h2>Uploaded PDF</h2>
+                <div class="file-preview">
+                    <p>PDF uploaded successfully! You can now extract content from this file.</p>
+                    <p>File path: <strong>@uploadedFilePath</strong></p>
+                    
+                    <button class="btn btn-success" @onclick="ExtractContent">
+                        Proceed to Content Extraction
+                    </button>
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="error-message">
+                <p>@errorMessage</p>
+            </div>
+        }
+    </div>
+}
+
+<style>
+    /* General Styles */
+    :root {
+        --primary-color: #6a0dad;
+        --secondary-color: #8a2be2;
+        --danger-color: #dc3545;
+        --success-color: #28a745;
+        --warning-color: #ffc107;
+        --background-dark: #1a1a1a;
+        --card-background: #2a2a2a;
+        --card-background-light: #3a3a3a;
+        --text-color: #fff;
+        --text-color-muted: #ddd;
+        --border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .pdf-uploader-container {
+        background-color: var(--card-background);
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .editor-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 1rem;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 1rem;
+    }
+
+    h1, h2 {
+        color: var(--text-color);
+        margin-top: 0;
+    }
+
+    p {
+        color: var(--text-color-muted);
+    }
+
+    .section-description {
+        margin-bottom: 1.5rem;
+    }
+
+    /* Loading Styles */
+    .loading-container {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        min-height: 200px;
+    }
+
+    .spinner {
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top: 4px solid var(--primary-color);
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Upload Section */
+    .upload-section, .uploaded-file-section {
+        background-color: var(--card-background-light);
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .file-input {
+        background-color: var(--background-dark);
+        border: 2px dashed var(--border-color);
+        border-radius: 8px;
+        padding: 2rem;
+        width: 100%;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.3s;
+        margin-bottom: 1rem;
+    }
+
+    .file-input:hover {
+        border-color: var(--primary-color);
+    }
+
+    .upload-info {
+        margin-top: 1.5rem;
+    }
+
+    .file-details {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+        padding: 0.75rem;
+        background-color: var(--background-dark);
+        border-radius: 4px;
+    }
+
+    .empty-selection {
+        text-align: center;
+        font-style: italic;
+        color: var(--text-color-muted);
+    }
+
+    .validation-error {
+        color: var(--danger-color);
+        margin-top: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .error-message {
+        background-color: rgba(220, 53, 69, 0.2);
+        border: 1px solid var(--danger-color);
+        border-radius: 4px;
+        padding: 1rem;
+        margin-top: 1.5rem;
+    }
+
+    .file-preview {
+        background-color: var(--card-background);
+        padding: 1rem;
+        border-radius: 4px;
+    }
+
+    /* Button Styles */
+    .btn {
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        font-weight: bold;
+        cursor: pointer;
+        border: none;
+        transition: background-color 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-primary {
+        background-color: var(--primary-color);
+        color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background-color: var(--secondary-color);
+    }
+
+    .btn-secondary {
+        background-color: var(--card-background-light);
+        color: white;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+        background-color: #4a4a4a;
+    }
+
+    .btn-success {
+        background-color: var(--success-color);
+        color: white;
+    }
+
+    .btn-success:hover:not(:disabled) {
+        background-color: #218838;
+    }
+
+    .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public Guid QuestId { get; set; }
+
+    private string questTitle = string.Empty;
+    private bool isLoading = true;
+    private bool isUploading = false;
+    private string errorMessage = string.Empty;
+    private string uploadedFilePath = string.Empty;
+    private IBrowserFile selectedFile;
+
+    // Constants for file size validation
+    private const long MinFileSize = 200 * 1024; // 200KB
+    private const long MaxFileSize = 5 * 1024 * 1024; // 5MB
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadQuest();
+        isLoading = false;
+    }
+
+    private async Task LoadQuest()
+    {
+        try
+        {
+            var quest = await ApiService.GetQuest(QuestId);
+            questTitle = quest.Title;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            errorMessage = "Failed to load quest information.";
+            NavigationManager.NavigateTo("/admin/dashboard");
+        }
+    }
+
+    private void HandleFileSelection(InputFileChangeEventArgs e)
+    {
+        // Clear any previous errors
+        errorMessage = string.Empty;
+        
+        // Get the selected file
+        selectedFile = e.File;
+    }
+
+    private async Task UploadPdf()
+    {
+        if (selectedFile == null || !IsValidFileSize(selectedFile.Size))
+        {
+            return;
+        }
+
+        isUploading = true;
+        errorMessage = string.Empty;
+
+        try
+        {
+            // In a real implementation, you would send the file to the server
+            // For this simplified version, we'll just simulate a successful upload
+            await Task.Delay(1500); // Simulate network delay
+            
+            uploadedFilePath = $"/uploads/{QuestId}/original/{Guid.NewGuid()}.pdf";
+            
+            // Display success message
+            await JSRuntime.InvokeVoidAsync("alert", "PDF uploaded successfully!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+            errorMessage = "Failed to upload PDF. Please try again.";
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private void ExtractContent()
+    {
+        // In a future implementation, this would navigate to the content extraction page
+        // For now, we'll just show an alert
+        JSRuntime.InvokeVoidAsync("alert", "Content extraction will be implemented in the next phase.");
+    }
+
+    private bool IsValidFileSize(long fileSize)
+    {
+        return fileSize >= MinFileSize && fileSize <= MaxFileSize;
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB" };
+        int order = 0;
+        double size = bytes;
+        
+        while (size >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            size /= 1024;
+        }
+        
+        return $"{size:0.##} {sizes[order]}";
+    }
+
+    private void NavigateBack()
+    {
+        NavigationManager.NavigateTo($"/admin/quests/{QuestId}");
+    }
+} 
