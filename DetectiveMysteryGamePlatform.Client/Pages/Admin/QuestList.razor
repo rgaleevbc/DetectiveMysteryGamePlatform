@@ -1,0 +1,160 @@
+@page "/admin/quests"
+@using DetectiveMysteryGamePlatform.Shared.Models
+@using System.Net.Http.Json
+@using Microsoft.AspNetCore.Authorization
+@inject HttpClient Http
+@inject NavigationManager NavigationManager
+@attribute [Authorize(Roles = "Admin")]
+
+<div class="quest-list-container">
+    <div class="header">
+        <h2>Quests</h2>
+        <button class="btn btn-primary" @onclick="CreateNewQuest">Create New Quest</button>
+    </div>
+
+    @if (loading)
+    {
+        <div class="loading">Loading quests...</div>
+    }
+    else if (error != null)
+    {
+        <div class="alert alert-danger">@error</div>
+    }
+    else if (quests == null || !quests.Any())
+    {
+        <div class="empty-state">
+            <p>No quests found. Create your first quest to get started!</p>
+            <button class="btn btn-primary" @onclick="CreateNewQuest">Create Quest</button>
+        </div>
+    }
+    else
+    {
+        <div class="quest-grid">
+            @foreach (var quest in quests)
+            {
+                <div class="quest-card" @onclick="() => NavigateToQuest(quest.Id)">
+                    <h3>@quest.Title</h3>
+                    <p class="description">@quest.Description</p>
+                    <div class="quest-info">
+                        <span class="rounds">@quest.NumberOfRounds rounds</span>
+                        <span class="date">Created: @quest.CreatedAt.ToShortDateString()</span>
+                    </div>
+                    <button class="btn btn-secondary" @onclick='() => NavigationManager.NavigateTo($"/admin/quests/{quest.Id}/edit")'>
+                        Edit
+                    </button>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .quest-list-container {
+        padding: 2rem;
+    }
+
+    .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+    }
+
+    .quest-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .quest-card {
+        background-color: var(--card-background, #ffffff);
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        cursor: pointer;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .quest-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .quest-card h3 {
+        margin: 0 0 1rem 0;
+        color: var(--primary-color, #007bff);
+    }
+
+    .description {
+        color: var(--text-color, #212529);
+        margin-bottom: 1rem;
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .quest-info {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.9rem;
+        color: var(--text-muted, #6c757d);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        background-color: var(--card-background, #ffffff);
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .loading {
+        text-align: center;
+        padding: 2rem;
+        color: var(--text-muted, #6c757d);
+    }
+
+    .btn {
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+    }
+
+    .btn-primary {
+        background-color: var(--primary-color, #007bff);
+        color: white;
+        border: none;
+    }
+</style>
+
+@code {
+    private List<Quest>? quests;
+    private bool loading = true;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            quests = await Http.GetFromJsonAsync<List<Quest>>("api/quests");
+            loading = false;
+        }
+        catch (Exception ex)
+        {
+            error = $"Error loading quests: {ex.Message}";
+            loading = false;
+        }
+    }
+
+    private void CreateNewQuest()
+    {
+        NavigationManager.NavigateTo("/admin/quests/create");
+    }
+
+    private void NavigateToQuest(Guid questId)
+    {
+        NavigationManager.NavigateTo($"/admin/quests/{questId}/edit");
+    }
+} 

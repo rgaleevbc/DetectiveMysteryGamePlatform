@@ -11,6 +11,11 @@ namespace DetectiveMysteryGamePlatform.Api.Services
 
         public PdfProcessingService(string uploadDirectory)
         {
+            if (string.IsNullOrWhiteSpace(uploadDirectory))
+            {
+                throw new ArgumentException("Upload directory path is required", nameof(uploadDirectory));
+            }
+
             _uploadDirectory = uploadDirectory;
             
             // Ensure the upload directory exists
@@ -22,6 +27,26 @@ namespace DetectiveMysteryGamePlatform.Api.Services
 
         public async Task<string> SavePdfFile(IFormFile file, Guid questId)
         {
+            if (file == null)
+            {
+                throw new ArgumentNullException(nameof(file));
+            }
+
+            if (questId == Guid.Empty)
+            {
+                throw new ArgumentException("Invalid quest ID", nameof(questId));
+            }
+
+            if (file.Length == 0)
+            {
+                throw new ArgumentException("File is empty", nameof(file));
+            }
+
+            if (!file.ContentType.Equals("application/pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("File must be a PDF", nameof(file));
+            }
+
             // Create a directory for this quest
             var questDirectory = Path.Combine(_uploadDirectory, questId.ToString());
             if (!Directory.Exists(questDirectory))
@@ -44,11 +69,36 @@ namespace DetectiveMysteryGamePlatform.Api.Services
 
         public async Task<string> ExtractImageFromPdf(string pdfPath, int pageNumber, Guid contentId)
         {
+            if (string.IsNullOrWhiteSpace(pdfPath))
+            {
+                throw new ArgumentException("PDF path is required", nameof(pdfPath));
+            }
+
+            if (pageNumber <= 0)
+            {
+                throw new ArgumentException("Page number must be greater than 0", nameof(pageNumber));
+            }
+
+            if (contentId == Guid.Empty)
+            {
+                throw new ArgumentException("Invalid content ID", nameof(contentId));
+            }
+
+            if (!File.Exists(pdfPath))
+            {
+                throw new FileNotFoundException("PDF file not found", pdfPath);
+            }
+
             // In a real implementation, use a PDF library like iTextSharp or PDFsharp
             // to extract images from the PDF
             
             // For MVP, we'll just return a placeholder
             var questId = Path.GetFileName(Path.GetDirectoryName(pdfPath));
+            if (string.IsNullOrEmpty(questId))
+            {
+                throw new InvalidOperationException("Could not determine quest ID from PDF path");
+            }
+
             var contentDirectory = Path.Combine(_uploadDirectory, questId, "content");
             if (!Directory.Exists(contentDirectory))
             {

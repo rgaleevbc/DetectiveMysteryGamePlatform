@@ -25,14 +25,29 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
             SignInManager<IdentityUser> signInManager,
             IConfiguration configuration)
         {
-            _userManager = userManager;
-            _signInManager = signInManager;
-            _configuration = configuration;
+            _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+            _signInManager = signInManager ?? throw new ArgumentNullException(nameof(signInManager));
+            _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         }
 
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest model)
         {
+            if (model == null)
+            {
+                return BadRequest(new { message = "Login request data is required" });
+            }
+
+            if (string.IsNullOrWhiteSpace(model.Email))
+            {
+                return BadRequest(new { message = "Email is required" });
+            }
+
+            if (string.IsNullOrWhiteSpace(model.Password))
+            {
+                return BadRequest(new { message = "Password is required" });
+            }
+
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user == null)
             {
@@ -46,6 +61,11 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
             }
 
             var token = GenerateJwtToken(user);
+            if (string.IsNullOrEmpty(token))
+            {
+                return StatusCode(500, new { message = "Failed to generate authentication token" });
+            }
+
             return Ok(new { token });
         }
 
@@ -59,6 +79,16 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest model)
         {
+            if (model == null)
+            {
+                return BadRequest(new { message = "Reset password request data is required" });
+            }
+
+            if (string.IsNullOrWhiteSpace(model.Email))
+            {
+                return BadRequest(new { message = "Email is required" });
+            }
+
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user == null)
             {
@@ -73,20 +103,50 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
 
         private string GenerateJwtToken(IdentityUser user)
         {
+            if (user == null)
+            {
+                throw new ArgumentNullException(nameof(user));
+            }
+
+            var secretKey = _configuration["JwtSettings:SecretKey"];
+            var issuer = _configuration["JwtSettings:Issuer"];
+            var audience = _configuration["JwtSettings:Audience"];
+            var expiryMinutes = _configuration["JwtSettings:ExpiryInMinutes"];
+
+            if (string.IsNullOrEmpty(secretKey))
+            {
+                throw new InvalidOperationException("JWT secret key is not configured");
+            }
+
+            if (string.IsNullOrEmpty(issuer))
+            {
+                throw new InvalidOperationException("JWT issuer is not configured");
+            }
+
+            if (string.IsNullOrEmpty(audience))
+            {
+                throw new InvalidOperationException("JWT audience is not configured");
+            }
+
+            if (string.IsNullOrEmpty(expiryMinutes))
+            {
+                throw new InvalidOperationException("JWT expiry time is not configured");
+            }
+
             var claims = new List<Claim>
             {
-                new Claim(JwtRegisteredClaimNames.Sub, user.Email),
+                new Claim(JwtRegisteredClaimNames.Sub, user.Email ?? string.Empty),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
                 new Claim(ClaimTypes.NameIdentifier, user.Id)
             };
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["JwtSettings:SecretKey"]));
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-            var expires = DateTime.Now.AddMinutes(Convert.ToDouble(_configuration["JwtSettings:ExpiryInMinutes"]));
+            var expires = DateTime.Now.AddMinutes(Convert.ToDouble(expiryMinutes));
 
             var token = new JwtSecurityToken(
-                _configuration["JwtSettings:Issuer"],
-                _configuration["JwtSettings:Audience"],
+                issuer,
+                audience,
                 claims,
                 expires: expires,
                 signingCredentials: creds

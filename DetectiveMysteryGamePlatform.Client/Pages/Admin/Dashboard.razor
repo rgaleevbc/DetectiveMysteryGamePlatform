@@ -13,14 +13,18 @@
     <div class="dashboard-section">
         <div class="section-header">
             <h2>Quests</h2>
-            <button class="btn btn-primary" @onclick="() => NavigationManager.NavigateTo("/admin/quests/create")">
-                <i class="fas fa-plus"></i> Create New Quest
+            <button class="btn btn-primary" @onclick='() => NavigationManager.NavigateTo("/admin/quests/create")'>
+                Create New Quest
             </button>
         </div>
 
-        @if (quests == null)
+        @if (isLoading)
         {
             <p>Loading quests...</p>
+        }
+        else if (errorMessage != null)
+        {
+            <p>@errorMessage</p>
         }
         else if (!quests.Any())
         {
@@ -37,11 +41,11 @@
                         <p><strong>Rounds:</strong> @quest.NumberOfRounds</p>
                         <p><strong>Created:</strong> @quest.CreatedAt.ToShortDateString()</p>
                         <div class="card-actions">
-                            <button class="btn btn-secondary" @onclick="() => NavigationManager.NavigateTo($"/admin/quests/{quest.Id}")">
-                                <i class="fas fa-edit"></i> Edit
+                            <button class="btn btn-secondary" @onclick='() => NavigationManager.NavigateTo("/admin/quests/" + quest.Id)'>
+                                Edit
                             </button>
-                            <button class="btn btn-success" @onclick="() => CreateGameSession(quest.Id)">
-                                <i class="fas fa-play"></i> Start Game
+                            <button class="btn btn-success" @onclick='() => CreateGameSession(quest.Id)'>
+                                Start Game
                             </button>
                         </div>
                     </div>
@@ -55,9 +59,13 @@
             <h2>Active Game Sessions</h2>
         </div>
 
-        @if (gameSessions == null)
+        @if (isLoading)
         {
             <p>Loading game sessions...</p>
+        }
+        else if (errorMessage != null)
+        {
+            <p>@errorMessage</p>
         }
         else if (!gameSessions.Any())
         {
@@ -73,8 +81,8 @@
                         <p><strong>Status:</strong> @session.Status</p>
                         <p><strong>Created:</strong> @session.CreatedAt.ToShortDateString()</p>
                         <div class="card-actions">
-                            <button class="btn btn-primary" @onclick="() => NavigationManager.NavigateTo($"/admin/game-sessions/{session.Id}")">
-                                <i class="fas fa-gamepad"></i> Manage
+                            <button class="btn btn-primary" @onclick='() => NavigationManager.NavigateTo("/admin/game-sessions/" + session.Id)'>
+                                Manage
                             </button>
                         </div>
                     </div>
@@ -86,22 +94,19 @@
 
 <style>
     .dashboard-container {
-        display: grid;
-        grid-template-columns: 1fr;
+        display: flex;
+        flex-direction: column;
         gap: 2rem;
-    }
-
-    @media (min-width: 768px) {
-        .dashboard-container {
-            grid-template-columns: 1fr 1fr;
-        }
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 1rem;
     }
 
     .dashboard-section {
-        background-color: #2a2a2a;
+        background-color: #ffffff;
         border-radius: 8px;
         padding: 1.5rem;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
     }
 
     .section-header {
@@ -118,10 +123,10 @@
     }
 
     .quest-card, .session-card {
-        background-color: #3a3a3a;
+        background-color: #f8f8f8;
         border-radius: 8px;
         padding: 1.5rem;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     .card-actions {
@@ -147,7 +152,7 @@
     }
 
     .btn-secondary {
-        background-color: #4a4a4a;
+        background-color: #5a5a5a;
         color: white;
     }
 
@@ -158,27 +163,41 @@
 
     h1 {
         margin-bottom: 2rem;
-        color: #fff;
+        color: #333333;
     }
 
     h2 {
         margin: 0;
-        color: #fff;
+        color: #333333;
     }
 
     h3 {
         margin-top: 0;
-        color: #fff;
+        color: #333333;
     }
 
     p {
-        color: #ddd;
+        color: #666666;
+    }
+
+    @@media (min-width: 768px) {
+        .quest-cards, .session-cards {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @@media (min-width: 1024px) {
+        .quest-cards {
+            grid-template-columns: repeat(3, 1fr);
+        }
     }
 </style>
 
 @code {
-    private List<Quest> quests;
-    private List<GameSession> gameSessions;
+    private List<Quest> quests = new();
+    private List<GameSession> gameSessions = new();
+    private string? errorMessage;
+    private bool isLoading = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -189,33 +208,64 @@
     {
         try
         {
-            quests = await ApiService.GetQuests();
-            gameSessions = await ApiService.GetGameSessions();
+            isLoading = true;
+            errorMessage = null;
+            
+            var questsResult = await ApiService.GetQuests();
+            var sessionsResult = await ApiService.GetGameSessions();
+
+            if (questsResult != null)
+            {
+                quests = questsResult;
+            }
+
+            if (sessionsResult != null)
+            {
+                gameSessions = sessionsResult;
+            }
         }
         catch (Exception ex)
         {
+            errorMessage = $"Error loading data: {ex.Message}";
             Console.WriteLine(ex.Message);
-            // Handle error (show error message, etc.)
+        }
+        finally
+        {
+            isLoading = false;
         }
     }
 
     private string GetQuestTitle(Guid questId)
     {
-        var quest = quests?.FirstOrDefault(q => q.Id == questId);
+        if (quests == null) return "Unknown Quest";
+        var quest = quests.FirstOrDefault(q => q.Id == questId);
         return quest?.Title ?? "Unknown Quest";
     }
 
     private async Task CreateGameSession(Guid questId)
     {
+        if (questId == Guid.Empty)
+        {
+            errorMessage = "Invalid quest ID";
+            return;
+        }
+
         try
         {
+            errorMessage = null;
             var gameSession = await ApiService.CreateGameSession(questId);
+            
+            if (gameSession == null || gameSession.Id == Guid.Empty)
+            {
+                throw new InvalidOperationException("Failed to create game session");
+            }
+
             NavigationManager.NavigateTo($"/admin/game-sessions/{gameSession.Id}");
         }
         catch (Exception ex)
         {
+            errorMessage = $"Error creating game session: {ex.Message}";
             Console.WriteLine(ex.Message);
-            // Handle error (show error message, etc.)
         }
     }
-} 
+}

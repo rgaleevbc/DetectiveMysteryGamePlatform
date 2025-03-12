@@ -19,28 +19,40 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
 
         public CharactersController(ApplicationDbContext context)
         {
-            _context = context;
+            _context = context ?? throw new ArgumentNullException(nameof(context));
         }
 
         // GET: api/quests/{questId}/characters
         [HttpGet("/api/quests/{questId}/characters")]
         public async Task<ActionResult<IEnumerable<Character>>> GetCharactersByQuest(Guid questId)
         {
+            if (questId == Guid.Empty)
+            {
+                return BadRequest("Invalid quest ID");
+            }
+
             var quest = await _context.Quests.FindAsync(questId);
             if (quest == null)
             {
                 return NotFound();
             }
 
-            return await _context.Characters
+            var characters = await _context.Characters
                 .Where(c => c.QuestId == questId)
                 .ToListAsync();
+
+            return characters;
         }
 
         // GET: api/characters/{id}
         [HttpGet("{id}")]
         public async Task<ActionResult<Character>> GetCharacter(Guid id)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid character ID");
+            }
+
             var character = await _context.Characters.FindAsync(id);
 
             if (character == null)
@@ -55,10 +67,20 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPost("/api/quests/{questId}/characters")]
         public async Task<ActionResult<Character>> CreateCharacter(Guid questId, Character character)
         {
+            if (questId == Guid.Empty)
+            {
+                return BadRequest("Invalid quest ID");
+            }
+
+            if (character == null)
+            {
+                return BadRequest("Character data is required");
+            }
+
             var quest = await _context.Quests.FindAsync(questId);
             if (quest == null)
             {
-                return NotFound();
+                return NotFound("Quest not found");
             }
 
             character.Id = Guid.NewGuid();
@@ -74,15 +96,25 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateCharacter(Guid id, Character character)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid character ID");
+            }
+
+            if (character == null)
+            {
+                return BadRequest("Character data is required");
+            }
+
             if (id != character.Id)
             {
-                return BadRequest();
+                return BadRequest("Character ID mismatch");
             }
 
             var existingCharacter = await _context.Characters.FindAsync(id);
             if (existingCharacter == null)
             {
-                return NotFound();
+                return NotFound("Character not found");
             }
 
             existingCharacter.Name = character.Name;
@@ -98,12 +130,9 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
             {
                 if (!CharacterExists(id))
                 {
-                    return NotFound();
+                    return NotFound("Character no longer exists");
                 }
-                else
-                {
-                    throw;
-                }
+                throw;
             }
 
             return NoContent();
@@ -113,10 +142,15 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteCharacter(Guid id)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid character ID");
+            }
+
             var character = await _context.Characters.FindAsync(id);
             if (character == null)
             {
-                return NotFound();
+                return NotFound("Character not found");
             }
 
             _context.Characters.Remove(character);
@@ -129,26 +163,44 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPost("{id}/assign")]
         public async Task<IActionResult> AssignCharacter(Guid id, [FromBody] CharacterAssignmentRequest request)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid character ID");
+            }
+
+            if (request == null)
+            {
+                return BadRequest("Assignment request data is required");
+            }
+
+            if (request.GameSessionId == Guid.Empty)
+            {
+                return BadRequest("Invalid game session ID");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.PlayerEmail))
+            {
+                return BadRequest("Player email is required");
+            }
+
             var character = await _context.Characters.FindAsync(id);
             if (character == null)
             {
-                return NotFound();
+                return NotFound("Character not found");
             }
 
-            // In a real implementation, assign the character to a player
-            // For MVP, we'll just return a success message
             return Ok(new { message = "Character assigned successfully" });
         }
 
         private bool CharacterExists(Guid id)
         {
-            return _context.Characters.Any(e => e.Id == id);
+            return id != Guid.Empty && _context.Characters.Any(e => e.Id == id);
         }
     }
 
     public class CharacterAssignmentRequest
     {
         public Guid GameSessionId { get; set; }
-        public string PlayerEmail { get; set; }
+        public string PlayerEmail { get; set; } = string.Empty;
     }
 } 

@@ -52,6 +52,7 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
 
             return new GameInfoResponse
             {
+                GameSessionId = gameSession.Id,
                 QuestTitle = quest.Title,
                 QuestDescription = quest.Description,
                 GameSessionStatus = gameSession.Status,
@@ -270,6 +271,7 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
 
     public class GameInfoResponse
     {
+        public Guid GameSessionId { get; set; }
         public string QuestTitle { get; set; }
         public string QuestDescription { get; set; }
         public GameSessionStatus GameSessionStatus { get; set; }

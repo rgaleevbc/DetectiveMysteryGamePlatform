@@ -19,11 +19,14 @@ namespace DetectiveMysteryGamePlatform.Client.Services
 
         public GameHubService(NavigationManager navigationManager)
         {
-            _navigationManager = navigationManager;
+            _navigationManager = navigationManager ?? throw new ArgumentNullException(nameof(navigationManager));
         }
 
         public async Task StartConnection(string gameSessionId)
         {
+            if (string.IsNullOrEmpty(gameSessionId))
+                throw new ArgumentNullException(nameof(gameSessionId));
+
             if (_hubConnection == null)
             {
                 _hubConnection = new HubConnectionBuilder()
@@ -59,6 +62,9 @@ namespace DetectiveMysteryGamePlatform.Client.Services
 
         public async Task StopConnection(string gameSessionId)
         {
+            if (string.IsNullOrEmpty(gameSessionId))
+                throw new ArgumentNullException(nameof(gameSessionId));
+
             if (_hubConnection != null)
             {
                 await _hubConnection.InvokeAsync("LeaveGameSession", gameSessionId);
@@ -68,6 +74,12 @@ namespace DetectiveMysteryGamePlatform.Client.Services
 
         public async Task UpdateConnectionStatus(string gameSessionId, string playerName, bool isConnected)
         {
+            if (string.IsNullOrEmpty(gameSessionId))
+                throw new ArgumentNullException(nameof(gameSessionId));
+
+            if (string.IsNullOrEmpty(playerName))
+                throw new ArgumentNullException(nameof(playerName));
+
             if (_hubConnection != null)
             {
                 await _hubConnection.InvokeAsync("UpdateConnectionStatus", gameSessionId, playerName, isConnected);
@@ -76,6 +88,12 @@ namespace DetectiveMysteryGamePlatform.Client.Services
 
         public async Task NotifyRoundAdvanced(string gameSessionId, int newRoundNumber, string newRoundTitle)
         {
+            if (string.IsNullOrEmpty(gameSessionId))
+                throw new ArgumentNullException(nameof(gameSessionId));
+
+            if (string.IsNullOrEmpty(newRoundTitle))
+                throw new ArgumentNullException(nameof(newRoundTitle));
+
             if (_hubConnection != null)
             {
                 await _hubConnection.InvokeAsync("RoundAdvanced", gameSessionId, newRoundNumber, newRoundTitle);
@@ -84,6 +102,12 @@ namespace DetectiveMysteryGamePlatform.Client.Services
 
         public async Task NotifyContentRevealed(string gameSessionId, string contentTitle)
         {
+            if (string.IsNullOrEmpty(gameSessionId))
+                throw new ArgumentNullException(nameof(gameSessionId));
+
+            if (string.IsNullOrEmpty(contentTitle))
+                throw new ArgumentNullException(nameof(contentTitle));
+
             if (_hubConnection != null)
             {
                 await _hubConnection.InvokeAsync("ContentRevealed", gameSessionId, contentTitle);
@@ -92,6 +116,12 @@ namespace DetectiveMysteryGamePlatform.Client.Services
 
         public async Task NotifyGameStatusChanged(string gameSessionId, string newStatus)
         {
+            if (string.IsNullOrEmpty(gameSessionId))
+                throw new ArgumentNullException(nameof(gameSessionId));
+
+            if (string.IsNullOrEmpty(newStatus))
+                throw new ArgumentNullException(nameof(newStatus));
+
             if (_hubConnection != null)
             {
                 await _hubConnection.InvokeAsync("GameStatusChanged", gameSessionId, newStatus);

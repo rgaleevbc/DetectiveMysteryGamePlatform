@@ -21,26 +21,32 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
 
         public QuestsController(ApplicationDbContext context, PdfProcessingService pdfProcessingService)
         {
-            _context = context;
-            _pdfProcessingService = pdfProcessingService;
+            _context = context ?? throw new ArgumentNullException(nameof(context));
+            _pdfProcessingService = pdfProcessingService ?? throw new ArgumentNullException(nameof(pdfProcessingService));
         }
 
         // GET: api/quests
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Quest>>> GetQuests()
         {
-            return await _context.Quests.ToListAsync();
+            var quests = await _context.Quests.ToListAsync();
+            return quests;
         }
 
         // GET: api/quests/{id}
         [HttpGet("{id}")]
         public async Task<ActionResult<Quest>> GetQuest(Guid id)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid quest ID");
+            }
+
             var quest = await _context.Quests.FindAsync(id);
 
             if (quest == null)
             {
-                return NotFound();
+                return NotFound("Quest not found");
             }
 
             return quest;
@@ -50,6 +56,11 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<Quest>> CreateQuest(Quest quest)
         {
+            if (quest == null)
+            {
+                return BadRequest("Quest data is required");
+            }
+
             quest.Id = Guid.NewGuid();
             quest.CreatedAt = DateTime.UtcNow;
             quest.UpdatedAt = DateTime.UtcNow;
@@ -67,15 +78,25 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateQuest(Guid id, Quest quest)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid quest ID");
+            }
+
+            if (quest == null)
+            {
+                return BadRequest("Quest data is required");
+            }
+
             if (id != quest.Id)
             {
-                return BadRequest();
+                return BadRequest("Quest ID mismatch");
             }
 
             var existingQuest = await _context.Quests.FindAsync(id);
             if (existingQuest == null)
             {
-                return NotFound();
+                return NotFound("Quest not found");
             }
 
             existingQuest.Title = quest.Title;
@@ -91,12 +112,9 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
             {
                 if (!QuestExists(id))
                 {
-                    return NotFound();
+                    return NotFound("Quest no longer exists");
                 }
-                else
-                {
-                    throw;
-                }
+                throw;
             }
 
             return NoContent();
@@ -106,10 +124,15 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteQuest(Guid id)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid quest ID");
+            }
+
             var quest = await _context.Quests.FindAsync(id);
             if (quest == null)
             {
-                return NotFound();
+                return NotFound("Quest not found");
             }
 
             _context.Quests.Remove(quest);
@@ -122,10 +145,20 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPost("{id}/upload-pdf")]
         public async Task<IActionResult> UploadPdf(Guid id, [FromForm] PdfUploadRequest request)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid quest ID");
+            }
+
+            if (request == null)
+            {
+                return BadRequest("Upload request data is required");
+            }
+
             var quest = await _context.Quests.FindAsync(id);
             if (quest == null)
             {
-                return NotFound();
+                return NotFound("Quest not found");
             }
 
             if (request.File == null || request.File.Length == 0)
@@ -136,6 +169,11 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
             // Save the PDF file
             var filePath = await _pdfProcessingService.SavePdfFile(request.File, id);
 
+            if (string.IsNullOrEmpty(filePath))
+            {
+                return StatusCode(500, "Failed to save PDF file");
+            }
+
             return Ok(new { message = "PDF uploaded successfully", filePath });
         }
 
@@ -143,16 +181,39 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPost("{id}/extract-content")]
         public async Task<IActionResult> ExtractContent(Guid id, [FromBody] ContentExtractionRequest request)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid quest ID");
+            }
+
+            if (request == null)
+            {
+                return BadRequest("Extraction request data is required");
+            }
+
+            if (request.Items == null || !request.Items.Any())
+            {
+                return BadRequest("No content items provided for extraction");
+            }
+
             var quest = await _context.Quests.FindAsync(id);
             if (quest == null)
             {
-                return NotFound();
+                return NotFound("Quest not found");
             }
 
-            // In a real implementation, extract content from the PDF
-            // For MVP, we'll create placeholder content
             foreach (var item in request.Items)
             {
+                if (item == null)
+                {
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(item.Type))
+                {
+                    continue;
+                }
+
                 var contentId = Guid.NewGuid();
                 var content = new Content
                 {
@@ -179,13 +240,13 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
 
         private bool QuestExists(Guid id)
         {
-            return _context.Quests.Any(e => e.Id == id);
+            return id != Guid.Empty && _context.Quests.Any(e => e.Id == id);
         }
     }
 
     public class PdfUploadRequest
     {
-        public Microsoft.AspNetCore.Http.IFormFile File { get; set; }
+        public IFormFile File { get; set; }
     }
 
     public class ContentExtractionRequest

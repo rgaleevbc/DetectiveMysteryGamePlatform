@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: detective_game_db
+    environment:
+      POSTGRES_DB: detective_game
+      POSTGRES_USER: detective_admin
+      POSTGRES_PASSWORD: detective_pass123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U detective_admin -d detective_game"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: detective_game_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@detective.com
+      PGADMIN_DEFAULT_PASSWORD: pgadmin123
+    ports:
+      - "5433:80"
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data: 

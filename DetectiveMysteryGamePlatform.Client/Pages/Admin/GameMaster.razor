@@ -32,21 +32,21 @@
             <div class="game-master-container">
                 <div class="game-header">
                     <div class="game-title">
-                        <h1>@gameSession.QuestTitle</h1>
-                        <span class="game-status @gameSession.Status.ToLower()">@gameSession.Status</span>
+                        <h1>@(gameSession?.QuestTitle ?? "Loading...")</h1>
+                        <span class="game-status @(gameSession?.Status.ToString().ToLower() ?? "")">@(gameSession?.Status ?? GameSessionStatus.Created)</span>
                     </div>
                     <div class="game-actions">
                         <button class="btn btn-primary" @onclick="CopyInviteLink">Copy Invite Link</button>
-                        <button class="btn @(gameSession.Status == "Active" ? "btn-danger" : "btn-success")" @onclick="ToggleGameStatus">
-                            @(gameSession.Status == "Active" ? "End Game" : "Start Game")
+                        <button class='btn @(gameSession?.Status == GameSessionStatus.InProgress ? "btn-danger" : "btn-success")' @onclick="ToggleGameStatus">
+                            @(gameSession?.Status == GameSessionStatus.InProgress ? "End Game" : "Start Game")
                         </button>
                     </div>
                 </div>
-                
+
                 <div class="game-content">
                     <div class="sidebar">
                         <div class="section">
-                            <h2>Players (@connectedPlayers.Count/@gameSession.MaxPlayers)</h2>
+                            <h2>Players (@connectedPlayers.Count/@(gameSession?.MaxPlayers ?? 0))</h2>
                             @if (!connectedPlayers.Any())
                             {
                                 <p>No players have joined yet.</p>
@@ -59,12 +59,12 @@
                                         <div class="player-card @(player.IsConnected ? "connected" : "disconnected")">
                                             <span class="player-name">@player.Name</span>
                                             <div class="player-actions">
-                                                <select class="character-select" value="@player.AssignedCharacterId" 
-                                                        @onchange="@(e => AssignCharacter(player.Name, Convert.ToInt32(e.Value)))">
+                                                <select class="character-select" value="@player.AssignedCharacterId"
+                                                        @onchange="@(e => AssignCharacter(player.Name, Guid.Parse(e.Value?.ToString() ?? "0")))">
                                                     <option value="0">-- Assign Character --</option>
                                                     @foreach (var character in availableCharacters)
                                                     {
-                                                        <option value="@character.Id" 
+                                                        <option value="@character.Id"
                                                                 disabled="@(character.IsAssigned && character.Id != player.AssignedCharacterId)">
                                                             @character.Name @(character.IsAssigned && character.Id != player.AssignedCharacterId ? "(Assigned)" : "")
                                                         </option>
@@ -76,7 +76,7 @@
                                 </div>
                             }
                         </div>
-                        
+
                         <div class="section">
                             <h2>Characters</h2>
                             @if (!availableCharacters.Any())
@@ -107,7 +107,7 @@
                             }
                         </div>
                     </div>
-                    
+
                     <div class="main-content">
                         <div class="section">
                             <div class="section-header">
@@ -122,14 +122,14 @@
                                     </button>
                                 </div>
                             </div>
-                            
+
                             @if (rounds.Any() && currentRoundIndex < rounds.Count)
                             {
                                 var round = rounds[currentRoundIndex];
                                 <div class="round-details">
                                     <h3>@round.Title</h3>
                                     <p>@round.Description</p>
-                                    
+
                                     <div class="content-sections">
                                         <div class="content-section">
                                             <h4>Public Content</h4>
@@ -145,9 +145,9 @@
                                                         <div class="content-card">
                                                             <div class="content-header">
                                                                 <h5>@content.Title</h5>
-                                                                <button class="btn @(content.IsRevealed ? "btn-secondary" : "btn-primary")" 
+                                                                <button class='btn @(content.IsRevealed ? "btn-secondary" : "btn-primary")'
                                                                         @onclick="() => ToggleContentVisibility(content.Id)"
-                                                                        disabled="@(!gameSession.IsActive)">
+                                                                        disabled="@(!gameSession?.IsActive ?? true)">
                                                                     @(content.IsRevealed ? "Hide" : "Reveal")
                                                                 </button>
                                                             </div>
@@ -162,7 +162,7 @@
                                                 </div>
                                             }
                                         </div>
-                                        
+
                                         <div class="content-section">
                                             <h4>Character-Specific Content</h4>
                                             @if (!round.CharacterContent.Any())
@@ -184,9 +184,9 @@
                                                                     <div class="content-card">
                                                                         <div class="content-header">
                                                                             <h6>@content.Title</h6>
-                                                                            <button class="btn @(content.IsRevealed ? "btn-secondary" : "btn-primary")" 
+                                                                            <button class="btn @(content.IsRevealed ? "btn-secondary" : "btn-primary")"
                                                                                     @onclick="() => ToggleContentVisibility(content.Id)"
-                                                                                    disabled="@(!gameSession.IsActive)">
+                                                                                    disabled="@(!gameSession?.IsActive ?? true)">
                                                                                 @(content.IsRevealed ? "Hide" : "Reveal")
                                                                             </button>
                                                                         </div>
@@ -234,12 +234,12 @@
         --danger-color: #dc3545;
         --success-color: #28a745;
         --warning-color: #ffc107;
-        --background-dark: #1a1a1a;
-        --card-background: #2a2a2a;
-        --card-background-light: #3a3a3a;
-        --text-color: #fff;
-        --text-color-muted: #ddd;
-        --border-color: rgba(255, 255, 255, 0.1);
+        --background-dark: #f5f5f5;
+        --card-background: #ffffff;
+        --card-background-light: #f0f0f0;
+        --text-color: #333333;
+        --text-color-muted: #666666;
+        --border-color: rgba(0, 0, 0, 0.1);
     }
 
     body {
@@ -260,16 +260,12 @@
     }
 
     .spinner {
-        border: 4px solid rgba(255, 255, 255, 0.3);
-        border-radius: 50%;
-        border-top: 4px solid var(--primary-color);
-        width: 40px;
         height: 40px;
         animation: spin 1s linear infinite;
         margin-bottom: 1rem;
     }
 
-    @keyframes spin {
+    @@keyframes spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
     }
@@ -381,12 +377,13 @@
     }
 
     .player-card {
-        background-color: var(--card-background-light);
+        background-color: var(--card-background);
         border-radius: 4px;
         padding: 0.75rem;
         display: flex;
         justify-content: space-between;
         align-items: center;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     .player-card.connected {
@@ -403,7 +400,7 @@
     }
 
     .character-select {
-        background-color: var(--card-background);
+        background-color: var(--card-background-light);
         color: var(--text-color);
         border: 1px solid var(--border-color);
         padding: 0.5rem;
@@ -418,10 +415,11 @@
     }
 
     .character-card {
-        background-color: var(--card-background-light);
+        background-color: var(--card-background);
         border-radius: 8px;
         padding: 1rem;
         position: relative;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     .character-card.assigned {
@@ -454,6 +452,7 @@
         padding: 1rem;
         display: flex;
         flex-direction: column;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     .content-header {
@@ -480,6 +479,7 @@
         border-radius: 8px;
         padding: 1rem;
         margin-bottom: 1rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
 
     .character-content-group h5 {
@@ -509,7 +509,7 @@
     }
 
     .btn-secondary {
-        background-color: var(--card-background-light);
+        background-color: #5a5a5a;
         color: white;
     }
 
@@ -556,25 +556,44 @@
     [Parameter]
     public int SessionId { get; set; }
 
-    private bool isLoading = true;
-    private string errorMessage = string.Empty;
-    private GameSessionResponse gameSession;
-    private List<PlayerResponse> connectedPlayers = new List<PlayerResponse>();
-    private List<CharacterResponse> availableCharacters = new List<CharacterResponse>();
-    private List<RoundResponse> rounds = new List<RoundResponse>();
+    private GameSessionResponse? gameSession;
+    private List<PlayerResponse> connectedPlayers = new();
+    private List<CharacterResponse> availableCharacters = new();
+    private List<RoundResponse> rounds = new();
     private int currentRoundIndex = 0;
+    private bool isLoading = true;
+    private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadGameSession();
+        await SetupSignalRConnection();
+    }
+
+    private async Task LoadGameSession()
+    {
         try
         {
-            await LoadGameSession();
-            await ConnectToGameHub();
+            isLoading = true;
+            errorMessage = null;
+
+            gameSession = await ApiService.GetGameSession(SessionId)
+                ?? throw new InvalidOperationException("Failed to load game session");
+
+            connectedPlayers = await ApiService.GetPlayersInSession(SessionId)
+                ?? new List<PlayerResponse>();
+
+            availableCharacters = await ApiService.GetQuestCharacters(gameSession.QuestId)
+                ?? new List<CharacterResponse>();
+
+            rounds = await ApiService.GetQuestRounds(gameSession.QuestId)
+                ?? new List<RoundResponse>();
+
+            currentRoundIndex = gameSession.CurrentRound - 1;
         }
         catch (Exception ex)
         {
-            errorMessage = "Failed to load game session. Please try again.";
-            Console.WriteLine(ex.Message);
+            errorMessage = $"Error loading game session: {ex.Message}";
         }
         finally
         {
@@ -582,133 +601,81 @@
         }
     }
 
-    private async Task LoadGameSession()
+    private async Task SetupSignalRConnection()
     {
-        // Load game session details
-        gameSession = await ApiService.GetGameSession(SessionId);
-        
-        // Load connected players
-        connectedPlayers = await ApiService.GetPlayersInSession(SessionId);
-        
-        // Load available characters
-        availableCharacters = await ApiService.GetCharactersForQuest(gameSession.QuestId);
-        
-        // Load rounds
-        rounds = await ApiService.GetRoundsForQuest(gameSession.QuestId);
-        
-        // Set current round index
-        if (gameSession.CurrentRoundNumber > 0 && gameSession.CurrentRoundNumber <= rounds.Count)
-        {
-            currentRoundIndex = gameSession.CurrentRoundNumber - 1;
-        }
-    }
+        if (gameSession == null)
+            return;
 
-    private async Task ConnectToGameHub()
-    {
         try
         {
-            await GameHubService.StartConnection(gameSession.QuestTitle);
-            
-            // Register event handlers
-            GameHubService.OnPlayerJoined += HandlePlayerJoined;
-            GameHubService.OnPlayerLeft += HandlePlayerLeft;
-            GameHubService.OnConnectionStatusChanged += HandleConnectionStatusChanged;
+            await GameHubService.StartConnection(SessionId.ToString());
+            await GameHubService.UpdateConnectionStatus(SessionId.ToString(), "Game Master", true);
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex.Message);
+            errorMessage = "Failed to connect to game server: " + ex.Message;
         }
     }
 
-    private async Task HandlePlayerJoined(string playerName)
+    private async Task AssignCharacter(string playerName, Guid characterId)
     {
-        // Reload players
-        connectedPlayers = await ApiService.GetPlayersInSession(SessionId);
-        StateHasChanged();
-    }
+        if (gameSession == null)
+            return;
 
-    private async Task HandlePlayerLeft(string playerName)
-    {
-        // Reload players
-        connectedPlayers = await ApiService.GetPlayersInSession(SessionId);
-        StateHasChanged();
-    }
-
-    private async Task HandleConnectionStatusChanged(string playerName, bool isConnected)
-    {
-        // Update player connection status
-        var player = connectedPlayers.FirstOrDefault(p => p.Name == playerName);
-        if (player != null)
-        {
-            player.IsConnected = isConnected;
-            StateHasChanged();
-        }
-    }
-
-    private async Task AssignCharacter(string playerName, int characterId)
-    {
         try
         {
             await ApiService.AssignCharacterToPlayer(SessionId, playerName, characterId);
-            
-            // Reload players and characters
-            connectedPlayers = await ApiService.GetPlayersInSession(SessionId);
-            availableCharacters = await ApiService.GetCharactersForQuest(gameSession.QuestId);
-            
-            // Notify player of character assignment
-            await GameHubService.NotifyCharacterAssigned(gameSession.QuestTitle, playerName, characterId);
+            await LoadGameSession(); // Refresh data
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex.Message);
+            errorMessage = "Failed to assign character: " + ex.Message;
         }
     }
 
     private async Task ToggleGameStatus()
     {
+        if (gameSession == null)
+            return;
+
         try
         {
-            if (gameSession.Status == "Active")
+            if (gameSession.Status == GameSessionStatus.InProgress)
             {
-                // End game
                 await ApiService.EndGameSession(SessionId);
+                await GameHubService.NotifyGameStatusChanged(SessionId.ToString(), "Completed");
             }
             else
             {
-                // Start game
                 await ApiService.StartGameSession(SessionId);
+                await GameHubService.NotifyGameStatusChanged(SessionId.ToString(), "InProgress");
             }
-            
-            // Reload game session
-            gameSession = await ApiService.GetGameSession(SessionId);
-            
-            // Notify players of game status change
-            await GameHubService.NotifyGameStatusChanged(gameSession.QuestTitle, gameSession.Status);
+
+            await LoadGameSession(); // Refresh data
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex.Message);
+            errorMessage = "Failed to update game status: " + ex.Message;
         }
     }
 
     private async Task NextRound()
     {
-        if (currentRoundIndex < rounds.Count - 1)
+        if (gameSession == null || currentRoundIndex >= rounds.Count - 1)
+            return;
+
+        try
         {
             currentRoundIndex++;
-            
-            // Update current round in the database
-            await ApiService.AdvanceRound(SessionId, currentRoundIndex + 1);
-            
-            // Reload game session
-            gameSession = await ApiService.GetGameSession(SessionId);
-            
-            // Notify players of round advancement
-            await GameHubService.NotifyRoundAdvanced(
-                gameSession.QuestTitle, 
-                currentRoundIndex + 1, 
-                rounds[currentRoundIndex].Title
-            );
+            var round = rounds[currentRoundIndex];
+            await ApiService.AdvanceRound(SessionId, round.RoundNumber);
+            await GameHubService.NotifyRoundAdvanced(SessionId.ToString(), round.RoundNumber, round.Title);
+            await LoadGameSession(); // Refresh data
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Failed to advance round: " + ex.Message;
+            currentRoundIndex--; // Revert on failure
         }
     }
 
@@ -720,65 +687,29 @@
         }
     }
 
-    private async Task ToggleContentVisibility(int contentId)
+    private async Task ToggleContentVisibility(Guid contentId)
     {
+        if (gameSession == null)
+            return;
+
         try
         {
             await ApiService.ToggleContentVisibility(SessionId, contentId);
-            
-            // Find the content in the rounds
-            foreach (var round in rounds)
-            {
-                var publicContent = round.PublicContent.FirstOrDefault(c => c.Id == contentId);
-                if (publicContent != null)
-                {
-                    publicContent.IsRevealed = !publicContent.IsRevealed;
-                    
-                    // Notify players of content reveal
-                    if (publicContent.IsRevealed)
-                    {
-                        await GameHubService.NotifyContentRevealed(gameSession.QuestTitle, publicContent.Title);
-                    }
-                    
-                    break;
-                }
-                
-                foreach (var characterContent in round.CharacterContent)
-                {
-                    if (characterContent.Id == contentId)
-                    {
-                        characterContent.IsRevealed = !characterContent.IsRevealed;
-                        
-                        // Notify specific player of content reveal
-                        if (characterContent.IsRevealed)
-                        {
-                            var player = connectedPlayers.FirstOrDefault(p => p.AssignedCharacterId == characterContent.CharacterId);
-                            if (player != null)
-                            {
-                                await GameHubService.NotifyContentRevealed(gameSession.QuestTitle, characterContent.Title, player.Name);
-                            }
-                        }
-                        
-                        break;
-                    }
-                }
-            }
-            
-            StateHasChanged();
+            await LoadGameSession(); // Refresh data
         }
         catch (Exception ex)
         {
-            Console.WriteLine(ex.Message);
+            errorMessage = "Failed to toggle content visibility: " + ex.Message;
         }
     }
 
     private async Task CopyInviteLink()
     {
-        var baseUrl = NavigationManager.BaseUri;
-        var inviteLink = $"{baseUrl}play/{gameSession.InviteToken}";
-        
+        if (gameSession?.InviteToken == null)
+            return;
+
+        var inviteLink = $"{NavigationManager.BaseUri}play/{gameSession.InviteToken}";
         await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", inviteLink);
-        await JSRuntime.InvokeVoidAsync("alert", "Invite link copied to clipboard!");
     }
 
     private void GoToDashboard()
@@ -793,19 +724,14 @@
 
     private void ReloadPage()
     {
-        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
+        NavigationManager.NavigateTo(NavigationManager.Uri, true);
     }
 
     public async ValueTask DisposeAsync()
     {
-        // Disconnect from SignalR hub
-        if (GameHubService.IsConnected)
+        if (gameSession != null)
         {
-            GameHubService.OnPlayerJoined -= HandlePlayerJoined;
-            GameHubService.OnPlayerLeft -= HandlePlayerLeft;
-            GameHubService.OnConnectionStatusChanged -= HandleConnectionStatusChanged;
-            
-            await GameHubService.StopConnection(gameSession?.QuestTitle);
+            await GameHubService.StopConnection(SessionId.ToString());
         }
     }
-} 
+}

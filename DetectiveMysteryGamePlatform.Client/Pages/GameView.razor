@@ -1,0 +1,10 @@
+@page "/game/{GameSessionId:guid}"
+@using DetectiveMysteryGamePlatform.Client.Services
+@using DetectiveMysteryGamePlatform.Shared.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.ComponentModel.DataAnnotations
+@inject ApiService ApiService
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider
+
+// ... existing code ... 

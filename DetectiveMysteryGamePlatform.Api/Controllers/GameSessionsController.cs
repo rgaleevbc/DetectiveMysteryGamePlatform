@@ -19,25 +19,31 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
 
         public GameSessionsController(ApplicationDbContext context)
         {
-            _context = context;
+            _context = context ?? throw new ArgumentNullException(nameof(context));
         }
 
         // GET: api/game-sessions
         [HttpGet]
         public async Task<ActionResult<IEnumerable<GameSession>>> GetGameSessions()
         {
-            return await _context.GameSessions.ToListAsync();
+            var sessions = await _context.GameSessions.ToListAsync();
+            return sessions;
         }
 
         // GET: api/game-sessions/{id}
         [HttpGet("{id}")]
         public async Task<ActionResult<GameSession>> GetGameSession(Guid id)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid game session ID");
+            }
+
             var gameSession = await _context.GameSessions.FindAsync(id);
 
             if (gameSession == null)
             {
-                return NotFound();
+                return NotFound("Game session not found");
             }
 
             return gameSession;
@@ -47,6 +53,16 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPost]
         public async Task<ActionResult<GameSession>> CreateGameSession(GameSessionCreateRequest request)
         {
+            if (request == null)
+            {
+                return BadRequest("Request data is required");
+            }
+
+            if (request.QuestId == Guid.Empty)
+            {
+                return BadRequest("Invalid quest ID");
+            }
+
             var quest = await _context.Quests.FindAsync(request.QuestId);
             if (quest == null)
             {
@@ -71,7 +87,9 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow,
                 Status = GameSessionStatus.Created,
-                CurrentRoundId = firstRound.Id
+                CurrentRoundId = firstRound.Id,
+                CurrentRound = firstRound.Number,
+                PlayerSessions = new List<PlayerSession>()
             };
 
             _context.GameSessions.Add(gameSession);
@@ -84,14 +102,33 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPut("{id}/status")]
         public async Task<IActionResult> UpdateGameSessionStatus(Guid id, [FromBody] GameSessionStatusUpdateRequest request)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid game session ID");
+            }
+
+            if (request == null)
+            {
+                return BadRequest("Status update data is required");
+            }
+
             var gameSession = await _context.GameSessions.FindAsync(id);
             if (gameSession == null)
             {
-                return NotFound();
+                return NotFound("Game session not found");
             }
 
             gameSession.Status = request.Status;
             gameSession.UpdatedAt = DateTime.UtcNow;
+
+            if (request.Status == GameSessionStatus.InProgress && !gameSession.StartedAt.HasValue)
+            {
+                gameSession.StartedAt = DateTime.UtcNow;
+            }
+            else if (request.Status == GameSessionStatus.Completed && !gameSession.EndedAt.HasValue)
+            {
+                gameSession.EndedAt = DateTime.UtcNow;
+            }
 
             await _context.SaveChangesAsync();
 
@@ -102,10 +139,25 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPost("{id}/invite-player")]
         public async Task<IActionResult> InvitePlayer(Guid id, [FromBody] PlayerInviteRequest request)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid game session ID");
+            }
+
+            if (request == null)
+            {
+                return BadRequest("Player invite data is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Email))
+            {
+                return BadRequest("Player email is required");
+            }
+
             var gameSession = await _context.GameSessions.FindAsync(id);
             if (gameSession == null)
             {
-                return NotFound();
+                return NotFound("Game session not found");
             }
 
             // Check if player is already invited
@@ -143,10 +195,15 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
         [HttpPut("{id}/advance-round")]
         public async Task<IActionResult> AdvanceRound(Guid id)
         {
+            if (id == Guid.Empty)
+            {
+                return BadRequest("Invalid game session ID");
+            }
+
             var gameSession = await _context.GameSessions.FindAsync(id);
             if (gameSession == null)
             {
-                return NotFound();
+                return NotFound("Game session not found");
             }
 
             // Get current round
@@ -166,10 +223,12 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
             {
                 // No more rounds, complete the game
                 gameSession.Status = GameSessionStatus.Completed;
+                gameSession.EndedAt = DateTime.UtcNow;
             }
             else
             {
                 gameSession.CurrentRoundId = nextRound.Id;
+                gameSession.CurrentRound = nextRound.Number;
                 gameSession.Status = GameSessionStatus.InProgress;
             }
 
@@ -192,6 +251,6 @@ namespace DetectiveMysteryGamePlatform.Api.Controllers
 
     public class PlayerInviteRequest
     {
-        public string Email { get; set; }
+        public string Email { get; set; } = string.Empty;
     }
 } 

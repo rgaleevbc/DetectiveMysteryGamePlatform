@@ -1,9 +1,12 @@
 @page "/play/{Token}"
 @using DetectiveMysteryGamePlatform.Client.Services
 @using DetectiveMysteryGamePlatform.Shared.Models
+@using Microsoft.AspNetCore.Components.Authorization
+@using System.ComponentModel.DataAnnotations
 @inject ApiService ApiService
 @inject GameHubService GameHubService
 @inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthStateProvider
 
 @if (isLoading)
 {
@@ -24,8 +27,8 @@ else if (!hasJoined)
 {
     <div class="join-container">
         <div class="join-card">
-            <h2>@gameInfo.QuestTitle</h2>
-            <p>@gameInfo.QuestDescription</p>
+            <h2>@(gameInfo?.QuestTitle ?? "Loading...")</h2>
+            <p>@(gameInfo?.QuestDescription ?? "Loading...")</p>
             
             <EditForm Model="@joinModel" OnValidSubmit="JoinGame">
                 <DataAnnotationsValidator />
@@ -55,16 +58,16 @@ else
 {
     <div class="game-container">
         <div class="game-header">
-            <h1>@gameInfo.QuestTitle</h1>
+            <h1>@(gameInfo?.QuestTitle ?? "Loading...")</h1>
             <div class="round-info">
-                <span>Round @gameInfo.CurrentRoundNumber: @gameInfo.CurrentRoundTitle</span>
+                <span>Round @(gameInfo?.CurrentRoundNumber ?? 0): @(gameInfo?.CurrentRoundTitle ?? "Loading...")</span>
             </div>
         </div>
         
         <div class="game-content">
             <div class="sidebar">
                 <div class="character-info">
-                    @if (gameInfo.HasCharacterAssigned && character != null)
+                    @if (gameInfo?.HasCharacterAssigned == true && character != null)
                     {
                         <h3>Your Character</h3>
                         <div class="character-card">
@@ -180,16 +183,12 @@ else
     }
 
     .spinner {
-        border: 4px solid rgba(255, 255, 255, 0.3);
-        border-radius: 50%;
-        border-top: 4px solid var(--primary-color);
-        width: 40px;
         height: 40px;
         animation: spin 1s linear infinite;
         margin-bottom: 1rem;
     }
 
-    @keyframes spin {
+    @@keyframes spin {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
     }
@@ -338,39 +337,48 @@ else
 
 @code {
     [Parameter]
-    public string Token { get; set; }
+    public string Token { get; set; } = string.Empty;
 
+    private GameInfoResponse? gameInfo;
+    private CharacterResponse? character;
+    private List<CharacterResponse> publicCharacters = new();
+    private RoundResponse? currentRound;
     private bool isLoading = true;
-    private bool hasJoined = false;
     private bool isJoining = false;
-    private string errorMessage = string.Empty;
-    private JoinModel joinModel = new JoinModel();
-    private GameInfoResponse gameInfo;
-    private CharacterResponse character;
-    private List<CharacterResponse> publicCharacters;
-    private RoundResponse currentRound;
+    private bool hasJoined = false;
+    private string? errorMessage;
+    private JoinGameModel joinModel = new();
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            // Load initial game info
-            gameInfo = await ApiService.GetGameInfo(Token);
-            
-            // Check if player has already joined
-            if (!string.IsNullOrEmpty(gameInfo.PlayerName))
+            isLoading = true;
+            errorMessage = null;
+
+            gameInfo = await ApiService.GetGameInfo(Token)
+                ?? throw new InvalidOperationException("Failed to load game info");
+
+            if (gameInfo.HasCharacterAssigned)
             {
-                hasJoined = true;
-                await LoadGameData();
-                
-                // Connect to SignalR hub
-                await ConnectToGameHub();
+                character = await ApiService.GetPlayerCharacter(Token);
+            }
+
+            publicCharacters = await ApiService.GetPublicCharacters(Token)
+                ?? new List<CharacterResponse>();
+
+            currentRound = await ApiService.GetCurrentRound(Token);
+
+            hasJoined = !string.IsNullOrEmpty(gameInfo.PlayerName);
+
+            if (hasJoined)
+            {
+                await SetupSignalRConnection();
             }
         }
         catch (Exception ex)
         {
-            errorMessage = "Failed to load game. The invitation link may be invalid or expired.";
-            Console.WriteLine(ex.Message);
+            errorMessage = $"Error loading game: {ex.Message}";
         }
         finally
         {
@@ -378,28 +386,43 @@ else
         }
     }
 
-    private async Task JoinGame()
+    private async Task SetupSignalRConnection()
     {
-        isJoining = true;
-        
+        if (gameInfo == null)
+            return;
+
         try
         {
-            await ApiService.JoinGame(Token, joinModel.PlayerName);
-            
-            // Reload game info
-            gameInfo = await ApiService.GetGameInfo(Token);
-            hasJoined = true;
-            
-            // Load game data
-            await LoadGameData();
-            
-            // Connect to SignalR hub
-            await ConnectToGameHub();
+            var sessionId = await ApiService.GetGameSessionId(Token);
+            await GameHubService.StartConnection(sessionId);
+            await GameHubService.UpdateConnectionStatus(sessionId, gameInfo.PlayerName, true);
         }
         catch (Exception ex)
         {
-            errorMessage = "Failed to join the game. Please try again.";
-            Console.WriteLine(ex.Message);
+            errorMessage = "Failed to connect to game server: " + ex.Message;
+        }
+    }
+
+    private async Task JoinGame()
+    {
+        if (string.IsNullOrEmpty(joinModel.PlayerName))
+            return;
+
+        isJoining = true;
+        try
+        {
+            await ApiService.JoinGame(Token, joinModel.PlayerName);
+
+            // Refresh game info after joining
+            gameInfo = await ApiService.GetGameInfo(Token) 
+                ?? throw new InvalidOperationException("Failed to refresh game info");
+            hasJoined = true;
+
+            await SetupSignalRConnection();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Failed to join game: " + ex.Message;
         }
         finally
         {
@@ -407,94 +430,24 @@ else
         }
     }
 
-    private async Task LoadGameData()
-    {
-        try
-        {
-            // Load character info if assigned
-            if (gameInfo.HasCharacterAssigned)
-            {
-                character = await ApiService.GetPlayerCharacter(Token);
-            }
-            
-            // Load public characters
-            publicCharacters = await ApiService.GetPublicCharacters(Token);
-            
-            // Load current round
-            currentRound = await ApiService.GetCurrentRound(Token);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine(ex.Message);
-        }
-    }
-
-    private async Task ConnectToGameHub()
-    {
-        try
-        {
-            await GameHubService.StartConnection(gameInfo.QuestTitle);
-            
-            // Register event handlers
-            GameHubService.OnRoundAdvanced += HandleRoundAdvanced;
-            GameHubService.OnContentRevealed += HandleContentRevealed;
-            GameHubService.OnGameStatusChanged += HandleGameStatusChanged;
-            
-            // Update connection status
-            await GameHubService.UpdateConnectionStatus(
-                gameInfo.QuestTitle,
-                gameInfo.PlayerName,
-                true
-            );
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine(ex.Message);
-        }
-    }
-
-    private async Task HandleRoundAdvanced(int newRoundNumber, string newRoundTitle)
-    {
-        // Reload game data
-        await LoadGameData();
-        StateHasChanged();
-    }
-
-    private async Task HandleContentRevealed(string contentTitle)
-    {
-        // Reload game data
-        await LoadGameData();
-        StateHasChanged();
-    }
-
-    private async Task HandleGameStatusChanged(string newStatus)
-    {
-        // Reload game info
-        gameInfo = await ApiService.GetGameInfo(Token);
-        StateHasChanged();
-    }
-
     private void ReloadPage()
     {
-        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
-    }
-
-    public class JoinModel
-    {
-        [Required(ErrorMessage = "Please enter your name")]
-        public string PlayerName { get; set; } = string.Empty;
+        NavigationManager.NavigateTo(NavigationManager.Uri, true);
     }
 
     public async ValueTask DisposeAsync()
     {
-        // Disconnect from SignalR hub
-        if (GameHubService.IsConnected)
+        if (gameInfo != null)
         {
-            GameHubService.OnRoundAdvanced -= HandleRoundAdvanced;
-            GameHubService.OnContentRevealed -= HandleContentRevealed;
-            GameHubService.OnGameStatusChanged -= HandleGameStatusChanged;
-            
-            await GameHubService.StopConnection(gameInfo?.QuestTitle);
+            var sessionId = await ApiService.GetGameSessionId(Token);
+            await GameHubService.StopConnection(sessionId);
         }
+    }
+
+    private class JoinGameModel
+    {
+        [Required(ErrorMessage = "Please enter your name")]
+        [StringLength(50, ErrorMessage = "Name is too long")]
+        public string PlayerName { get; set; } = string.Empty;
     }
 } 

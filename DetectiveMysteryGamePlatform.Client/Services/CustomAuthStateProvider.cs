@@ -17,8 +17,8 @@ namespace DetectiveMysteryGamePlatform.Client.Services
 
         public CustomAuthStateProvider(HttpClient httpClient, ILocalStorageService localStorage)
         {
-            _httpClient = httpClient;
-            _localStorage = localStorage;
+            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+            _localStorage = localStorage ?? throw new ArgumentNullException(nameof(localStorage));
         }
 
         public override async Task<AuthenticationState> GetAuthenticationStateAsync()
@@ -38,6 +38,9 @@ namespace DetectiveMysteryGamePlatform.Client.Services
 
         public void MarkUserAsAuthenticated(string token)
         {
+            if (string.IsNullOrWhiteSpace(token))
+                throw new ArgumentNullException(nameof(token));
+
             var authenticatedUser = new ClaimsPrincipal(
                 new ClaimsIdentity(ParseClaimsFromJwt(token), "jwt"));
             
@@ -60,39 +63,55 @@ namespace DetectiveMysteryGamePlatform.Client.Services
 
         private IEnumerable<Claim> ParseClaimsFromJwt(string jwt)
         {
+            if (string.IsNullOrWhiteSpace(jwt))
+                throw new ArgumentNullException(nameof(jwt));
+
             var claims = new List<Claim>();
-            var payload = jwt.Split('.')[1];
+            var parts = jwt.Split('.');
+            if (parts.Length != 3)
+                throw new ArgumentException("Invalid JWT token format", nameof(jwt));
+
+            var payload = parts[1];
             var jsonBytes = ParseBase64WithoutPadding(payload);
-            var keyValuePairs = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonBytes);
+            var keyValuePairs = JsonSerializer.Deserialize<Dictionary<string, object>>(jsonBytes)
+                ?? throw new InvalidOperationException("Failed to deserialize JWT payload");
 
-            keyValuePairs.TryGetValue("role", out object roles);
-
-            if (roles != null)
+            if (keyValuePairs.TryGetValue("role", out object roles))
             {
-                if (roles.ToString().Trim().StartsWith("["))
+                var rolesStr = roles.ToString();
+                if (!string.IsNullOrEmpty(rolesStr))
                 {
-                    var parsedRoles = JsonSerializer.Deserialize<string[]>(roles.ToString());
-
-                    foreach (var parsedRole in parsedRoles)
+                    if (rolesStr.Trim().StartsWith("["))
                     {
-                        claims.Add(new Claim(ClaimTypes.Role, parsedRole));
+                        var parsedRoles = JsonSerializer.Deserialize<string[]>(rolesStr);
+                        if (parsedRoles != null)
+                        {
+                            foreach (var parsedRole in parsedRoles)
+                            {
+                                claims.Add(new Claim(ClaimTypes.Role, parsedRole));
+                            }
+                        }
                     }
-                }
-                else
-                {
-                    claims.Add(new Claim(ClaimTypes.Role, roles.ToString()));
+                    else
+                    {
+                        claims.Add(new Claim(ClaimTypes.Role, rolesStr));
+                    }
                 }
 
                 keyValuePairs.Remove("role");
             }
 
-            claims.AddRange(keyValuePairs.Select(kvp => new Claim(kvp.Key, kvp.Value.ToString())));
+            claims.AddRange(keyValuePairs.Select(kvp => 
+                new Claim(kvp.Key, kvp.Value?.ToString() ?? string.Empty)));
 
             return claims;
         }
 
         private byte[] ParseBase64WithoutPadding(string base64)
         {
+            if (string.IsNullOrWhiteSpace(base64))
+                throw new ArgumentNullException(nameof(base64));
+
             switch (base64.Length % 4)
             {
                 case 2: base64 += "=="; break;
